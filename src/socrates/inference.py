@@ -23,6 +23,7 @@ from socrates.paths import (
     SCENARIOS_PATH,
 )
 from socrates.coverage import CoverageStore
+from socrates.notifications import NotificationService, is_unavoidable
 from socrates.pipeline import ACTIVITIES_IN_ORDER, ModelingActivity, PipelineStore
 from socrates.proposition import Proposition, PropositionStore, normalize_statement
 
@@ -125,9 +126,12 @@ def assess_deferral_criticality(
     # Preserve order, drop duplicates.
     reasons = list(dict.fromkeys(reasons))
     critical = bool(reasons)
+    unavoidable = is_unavoidable(conflict.level, critical=critical)
     return {
         "critical": critical,
         "recommend_against": critical,
+        "deferrable": not unavoidable,
+        "unavoidable": unavoidable,
         "reasons": reasons,
     }
 
@@ -139,6 +143,7 @@ class InferenceEngine:
         self._backend = backend
         self._propositions = PropositionStore(backend)
         self._coverage = CoverageStore(backend)
+        self._notifications = NotificationService(backend)
 
     def current_pass(self) -> int:
         """Pass 1 is the Opening-seeded pass; increments after each probed Batch."""
@@ -362,6 +367,8 @@ class InferenceEngine:
         conflicts.extend(surfaced)
         self._save_conflicts(conflicts)
         self._coverage.add_conflicts(self.current_pass(), len(surfaced))
+        for conflict in surfaced:
+            self._maybe_notify_unavoidable(conflict)
         self.touch_propositions(proposition_id)
         return surfaced
 
@@ -472,7 +479,7 @@ class InferenceEngine:
         }
 
     def defer_conflict(self, conflict_id: str) -> dict[str, Any]:
-        """Park an open Conflict (any level) for later — orthogonal to Probe/Iteration."""
+        """Park an open Conflict for later — refused when unavoidable (ticket 10)."""
         conflicts = self._load_conflicts()
         conflict = next((c for c in conflicts if c.id == conflict_id), None)
         if conflict is None:
@@ -480,6 +487,12 @@ class InferenceEngine:
         if conflict.status != "open":
             raise ValueError(f"Conflict {conflict_id} is not open")
         criticality = self._criticality_for(conflict)
+        if criticality.get("unavoidable"):
+            raise ValueError(
+                f"Conflict {conflict_id} is unavoidable (non-deferrable, blocks "
+                "progress); resolve via Iteration or Probe — Notification already "
+                "surfaced it outside Interview flow"
+            )
         conflict.status = "deferred"
         conflict.re_raised = False
         conflict.batch_id = None
@@ -644,6 +657,11 @@ class InferenceEngine:
                 )
             elif action == "defer":
                 criticality = self._criticality_for(conflict)
+                if criticality.get("unavoidable"):
+                    raise ValueError(
+                        f"Conflict {conflict_id} is unavoidable (non-deferrable); "
+                        "cannot defer"
+                    )
                 conflict.status = "deferred"
                 conflict.re_raised = False
                 conflict.resolution = {"action": "defer", "criticality": criticality}
@@ -730,7 +748,24 @@ class InferenceEngine:
         )
         return assess_deferral_criticality(conflict, left, right)
 
+    def _maybe_notify_unavoidable(self, conflict: Conflict) -> None:
+        criticality = self._criticality_for(conflict)
+        if not criticality.get("unavoidable"):
+            return
+        self._notifications.emit(
+            "unavoidable_conflict",
+            conflict_id=conflict.id,
+            level=conflict.level,
+            summary=conflict.summary,
+            proposition_id=conflict.proposition_id,
+            other_proposition_id=conflict.other_proposition_id,
+            criticality=criticality,
+            blocks_progress=True,
+            deferrable=False,
+        )
+
     def _probe_conflict_payload(self, conflict: Conflict) -> dict[str, Any]:
+        criticality = self._criticality_for(conflict)
         return {
             "id": conflict.id,
             "proposition_id": conflict.proposition_id,
@@ -742,7 +777,7 @@ class InferenceEngine:
             "source": conflict.source,
             "routing": _probe_routing(conflict.level),
             "re_raised": conflict.re_raised,
-            "deferral": self._criticality_for(conflict),
+            "deferral": criticality,
         }
 
     def _require_need(self) -> str:

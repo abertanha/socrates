@@ -254,7 +254,8 @@ def test_deferral_criticality_reraise_and_satisfaction_warning():
     }
 
 
-def test_any_level_including_l4_can_be_deferred():
+def test_l4_is_unavoidable_and_cannot_be_deferred():
+    """Ticket 10 refines ticket 08: L4 is non-deferrable (blocks progress)."""
     need = "Marketplace checkout payments domain."
     p1 = "A Payment belongs to exactly one Order."
     p2 = "Payment status is Authorized or Settled."
@@ -315,7 +316,7 @@ def test_any_level_including_l4_can_be_deferred():
                 "assert-l4",
             ),
             _tool_call("defer_conflict", {"conflict_id": "c1"}, "defer-l4"),
-            AIMessage(content="L4 deferred."),
+            AIMessage(content="L4 remains open."),
         ]
     )
     agent = create_socrates_session(model=model)
@@ -333,15 +334,14 @@ def test_any_level_including_l4_can_be_deferred():
     conflicts = _load_json(finished["files"], CONFLICTS_PATH)["conflicts"]
     assert len(conflicts) == 1
     assert conflicts[0]["level"] == "L4"
-    assert conflicts[0]["status"] == "deferred"
-    assert conflicts[0]["resolution"]["criticality"]["recommend_against"] is True
+    assert conflicts[0]["status"] == "open"
 
-    defer_msgs = [
+    defer_errs = [
         m
         for m in finished["messages"]
         if isinstance(m, ToolMessage)
         and isinstance(m.content, str)
-        and '"status": "deferred"' in m.content
-        and "c1" in m.content
+        and '"ok":false' in m.content.replace(" ", "")
+        and "unavoidable" in m.content
     ]
-    assert defer_msgs
+    assert defer_errs

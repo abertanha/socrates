@@ -15,11 +15,11 @@ from typing import Any, Literal
 from deepagents.backends.protocol import BackendProtocol
 
 from socrates.paths import (
-    NOTIFICATIONS_PATH,
     PROPOSITIONS_PATH,
     REJECTION_GUARDRAIL_PATH,
 )
 from socrates.pipeline import ModelingActivity
+from socrates.notifications import NotificationService
 
 PropositionStatus = Literal[
     "candidate", "accepted", "rejected", "flagged", "superseded"
@@ -56,6 +56,7 @@ class PropositionStore:
 
     def __init__(self, backend: BackendProtocol) -> None:
         self._backend = backend
+        self._notifications = NotificationService(backend)
 
     def propose(self, statement: str, activity: ModelingActivity) -> Proposition:
         statement = statement.strip()
@@ -202,14 +203,13 @@ class PropositionStore:
 
         self._save_propositions(propositions)
 
-        notification = {
-            "kind": "supersede_cascade",
-            "superseded_id": accepted_id,
-            "new_proposition_id": new_id,
-            "reason": reason,
-            "degraded_ids": degraded_ids,
-        }
-        self._append_notification(notification)
+        notification = self._notifications.emit(
+            "supersede_cascade",
+            superseded_id=accepted_id,
+            new_proposition_id=new_id,
+            reason=reason,
+            degraded_ids=degraded_ids,
+        )
 
         return {
             "superseded_id": accepted_id,
@@ -257,10 +257,7 @@ class PropositionStore:
         return self._load_guardrail()
 
     def list_notifications(self) -> list[dict[str, Any]]:
-        raw = self._read_json(NOTIFICATIONS_PATH)
-        if raw is None:
-            return []
-        return list(raw.get("notifications", []))
+        return self._notifications.list_notifications()
 
     def _indirect_dependents(
         self,
@@ -280,14 +277,6 @@ class PropositionStore:
                         dependents.add(prop.id)
                         changed = True
         return dependents
-
-    def _append_notification(self, notification: dict[str, Any]) -> None:
-        notes = self.list_notifications()
-        notes.append(notification)
-        self._backend.write(
-            NOTIFICATIONS_PATH,
-            json.dumps({"notifications": notes}, indent=2),
-        )
 
     def _get(self, propositions: list[Proposition], proposition_id: str) -> Proposition:
         for prop in propositions:

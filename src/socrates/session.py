@@ -50,10 +50,11 @@ Session discipline:
    `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3.
    Probe routing: L1 in-line; L2 may Supersede (cascade Degrades dependents,
    user is notified not asked); L3 blocked by Rejection Guardrail (dismiss or
-   defer). Any Conflict may be deferred (`defer` / `defer_conflict`); the harness
-   recommends against deferring critical ones (high level / central Propositions).
-   Deferred Conflicts re-raise when new information touches their Propositions.
-   L4 (Accepted×Accepted) → `run_iteration` (or defer).
+   defer). Deferrable Conflicts may be deferred (`defer` / `defer_conflict`);
+   the harness recommends against deferring critical ones. L4 is unavoidable
+   (non-deferrable, blocks progress) — Notification outside Interview flow;
+   resolve via `run_iteration`. Quiet by default: routine Probes/Interviews
+   are not Notifications; only unavoidable Conflicts and Supersede cascades.
 6. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
    Conflicts appear as a non-blocking, criticality-weighted warning.
 7. When Satisfaction is recorded, stop. Never declare the Model done yourself.
