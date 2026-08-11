@@ -4,9 +4,13 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A session can be started and reaches an interrupt-gated Opening that elicits the Need from the user.
-- [ ] The Need is written to the virtual filesystem as the Model's first content (ADR-0001).
-- [ ] The user's explicit Satisfaction terminates the session — no automated "done" judgment (ADR-0002).
-- [ ] The model provider sits behind a boundary with a stub implementation, and one orchestration test uses the stub to assert the Need is persisted and Satisfaction ends the session.
+- [x] A session can be started and reaches an interrupt-gated Opening that elicits the Need from the user.
+- [x] The Need is written to the virtual filesystem as the Model's first content (ADR-0001).
+- [x] The user's explicit Satisfaction terminates the session — no automated "done" judgment (ADR-0002).
+- [x] The model provider sits behind a boundary with a stub implementation, and one orchestration test uses the stub to assert the Need is persisted and Satisfaction ends the session.
+
+## Comments
+
+- Implemented as `create_socrates_session` + `StubChatModel`. Opening (`run_opening`) interrupt-elicits the Need and writes `/model/need.md`; Satisfaction (`await_satisfaction`) is interrupt-gated; session ends when the user resumes and the agent loop terminates (`state.next == ()`). Orchestration coverage: `tests/test_walking_skeleton.py`.

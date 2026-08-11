@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "socrates"
+version = "0.1.0"
+description = "Maieutic agent harness for conceptual domain modeling, built on deepagents."
+readme = "AGENTS.md"
+requires-python = ">=3.12"
+dependencies = [
+  "deepagents>=0.7,<0.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
