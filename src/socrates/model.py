@@ -24,10 +24,11 @@ class StubChatModel(BaseChatModel):
 
     responses: list[AIMessage]
     _index: int = 0
+    label: str = "socrates-stub"
 
     @property
     def _llm_type(self) -> str:
-        return "socrates-stub"
+        return self.label
 
     def bind_tools(self, tools: Any, *, tool_choice: Any = None, **kwargs: Any) -> StubChatModel:
         return self

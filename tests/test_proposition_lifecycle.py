@@ -2,7 +2,8 @@
 
 Seam: session orchestration with the model provider stubbed.
 Covers Candidate triage, Accept / Reject, Rejection Guardrail persistence,
-and Guardrail resemblance flagging.
+and Guardrail resemblance flagging. Propositions are tagged with the
+Modeling Activity that produced them.
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
             _tool_call("run_opening", {}, "c-open"),
             _tool_call(
                 "propose_proposition",
-                {"statement": accepted_statement},
+                {"statement": accepted_statement, "activity": "requirements"},
                 "c-propose-1",
             ),
             _tool_call(
@@ -70,7 +71,7 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
             ),
             _tool_call(
                 "propose_proposition",
-                {"statement": rejected_statement},
+                {"statement": rejected_statement, "activity": "requirements"},
                 "c-propose-2",
             ),
             _tool_call(
@@ -80,7 +81,7 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
             ),
             _tool_call(
                 "propose_proposition",
-                {"statement": resembling_statement},
+                {"statement": resembling_statement, "activity": "requirements"},
                 "c-propose-3",
             ),
             AIMessage(content="Lifecycle pass complete."),
@@ -95,15 +96,14 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
     )
     assert opening["__interrupt__"][0].value["kind"] == "opening"
 
-    # Opening resume → propose p1 → accept interrupts; p1 must be Candidate.
     at_accept = agent.invoke(Command(resume=need), config=config)
     assert at_accept["files"][NEED_PATH]["content"] == need
     assert at_accept["__interrupt__"][0].value["kind"] == "accept"
     assert at_accept["__interrupt__"][0].value["proposition_id"] == "p1"
     assert _by_id(at_accept["files"])["p1"]["status"] == "candidate"
     assert _by_id(at_accept["files"])["p1"]["statement"] == accepted_statement
+    assert _by_id(at_accept["files"])["p1"]["activity"] == "requirements"
 
-    # User Accept signal → p1 Accepted; then propose p2 → reject interrupts.
     at_reject = agent.invoke(Command(resume="yes"), config=config)
     assert _by_id(at_reject["files"])["p1"]["status"] == "accepted"
     assert at_reject["__interrupt__"][0].value["kind"] == "reject"
@@ -112,7 +112,6 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
     assert _by_id(at_reject["files"])["p2"]["status"] == "candidate"
     assert _by_id(at_reject["files"])["p2"]["statement"] == rejected_statement
 
-    # User Reject signal → Guardrail entry; resembling propose → Flagged; done.
     finished = agent.invoke(Command(resume="yes"), config=config)
     assert finished.get("__interrupt__") is None
     assert agent.get_state(config).next == ()

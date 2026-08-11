@@ -4,9 +4,13 @@
 
 **Blocked by:** 02 — proposition lifecycle.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The session progresses through Requirements, then Domain Modeling, then Behavioral Specification, in that precedence.
-- [ ] Each activity runs as a distinct subagent with its own harness profile.
-- [ ] Every Proposition records which Modeling Activity produced it.
-- [ ] Behavioral Specification produces conceptual rules only — functional requirements stay out.
+- [x] The session progresses through Requirements, then Domain Modeling, then Behavioral Specification, in that precedence.
+- [x] Each activity runs as a distinct subagent with its own harness profile.
+- [x] Every Proposition records which Modeling Activity produced it.
+- [x] Behavioral Specification produces conceptual rules only — functional requirements stay out.
+
+## Comments
+
+- Three `SubAgent`s (`requirements`, `domain-modeling`, `behavioral-specification`) with distinct `system_prompt` + tool subsets; `PipelineStore` enforces precedence in `/model/pipeline.json`. Propositions carry `activity`. Behavioral `propose` rejects `the system shall…`. Orchestration coverage: `tests/test_modeling_activity_pipeline.py`.

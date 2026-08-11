@@ -7,14 +7,18 @@ and Flagged (triage hit against the Guardrail — not a Candidate).
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from deepagents.backends.protocol import BackendProtocol
 
 from socrates.paths import PROPOSITIONS_PATH, REJECTION_GUARDRAIL_PATH
+from socrates.pipeline import ModelingActivity, PipelineStore
 
 PropositionStatus = Literal["candidate", "accepted", "rejected", "flagged"]
+
+_FUNCTIONAL_REQUIREMENT = re.compile(r"\bthe system shall\b", re.IGNORECASE)
 
 
 @dataclass
@@ -22,6 +26,7 @@ class Proposition:
     id: str
     statement: str
     status: PropositionStatus
+    activity: ModelingActivity
     reason: str | None = None
     flagged_against_id: str | None = None
 
@@ -43,11 +48,22 @@ class PropositionStore:
 
     def __init__(self, backend: BackendProtocol) -> None:
         self._backend = backend
+        self._pipeline = PipelineStore(backend)
 
-    def propose(self, statement: str) -> Proposition:
+    def propose(self, statement: str, activity: ModelingActivity) -> Proposition:
         statement = statement.strip()
         if not statement:
             raise ValueError("Proposition statement must not be empty")
+
+        if activity == "behavioral_specification" and _FUNCTIONAL_REQUIREMENT.search(
+            statement
+        ):
+            raise ValueError(
+                "Behavioral Specification admits conceptual domain rules only; "
+                "functional requirements ('the system shall...') are out of scope"
+            )
+
+        self._pipeline.begin(activity)
 
         propositions = self._load_propositions()
         guardrail = self._load_guardrail()
@@ -59,6 +75,7 @@ class PropositionStore:
                     id=self._next_id(propositions),
                     statement=statement,
                     status="flagged",
+                    activity=activity,
                     flagged_against_id=entry.proposition_id,
                 )
                 propositions.append(prop)
@@ -66,7 +83,10 @@ class PropositionStore:
                 return prop
 
         for existing in propositions:
-            if existing.status == "accepted" and normalize_statement(existing.statement) == key:
+            if (
+                existing.status == "accepted"
+                and normalize_statement(existing.statement) == key
+            ):
                 raise ValueError(
                     f"Immediate conflict with Accepted Proposition {existing.id}"
                 )
@@ -75,6 +95,7 @@ class PropositionStore:
             id=self._next_id(propositions),
             statement=statement,
             status="candidate",
+            activity=activity,
         )
         propositions.append(prop)
         self._save_propositions(propositions)
