@@ -198,10 +198,22 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
     @tool
     def probe_batch() -> str:
-        """Gather open Conflicts into one Batch and Probe the user to resolve them together."""
+        """Gather open L1–L3 Conflicts into one Batch and Probe the user.
+
+        L4 Conflicts are not Probe-resolved — use run_iteration.
+        """
         try:
             result = inference.probe_batch()
         except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps({"ok": True, **result})
+
+    @tool
+    def run_iteration(conflict_id: str) -> str:
+        """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen activity."""
+        try:
+            result = inference.run_iteration(conflict_id)
+        except (ValueError, KeyError) as exc:
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps({"ok": True, **result})
 
@@ -215,6 +227,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         record_scenarios,
         run_assertion_tests,
         probe_batch,
+        run_iteration,
     ]
 
 

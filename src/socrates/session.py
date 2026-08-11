@@ -37,9 +37,11 @@ Session discipline:
    (rejection always needs an explicit reason). Indirect Acceptance may pass
    via_proposition_id.
 4. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
-   `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch`.
+   `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3.
    Probe routing: L1 in-line; L2 may Supersede (cascade Degrades dependents,
    user is notified not asked); L3 blocked by Rejection Guardrail (dismiss only).
+   L4 (Accepted×Accepted) → `run_iteration` (propose most-upstream activity;
+   user confirms; activity reopens against the current Model).
 5. Call `await_satisfaction` so the user can signal Satisfaction.
 6. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """

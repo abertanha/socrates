@@ -221,6 +221,7 @@ def test_reconciliation_levels_and_scenario_skip():
                 "assert-l4",
             ),
             _tool_call("probe_batch", {}, "probe-2"),
+            _tool_call("run_iteration", {"conflict_id": "c4"}, "iterate-l4"),
             AIMessage(content="Reconciliation pass complete."),
         ]
     )
@@ -261,15 +262,13 @@ def test_reconciliation_levels_and_scenario_skip():
         ),
         config=config,
     )
-    # probe 2 after reconcile + L4
+    # probe 2 after reconcile — L1–L3 only; L4 stays open for Iteration
     probe2 = r["__interrupt__"][0].value
     assert probe2["kind"] == "probe"
     by_level = {c["level"]: c for c in probe2["conflicts"]}
-    assert set(by_level) == {"L2", "L3", "L4"}
+    assert set(by_level) == {"L2", "L3"}
     assert by_level["L2"]["source"] == "reconciliation"
     assert by_level["L3"]["source"] == "reconciliation"
-    assert by_level["L4"]["source"] == "assertion_test"
-    assert by_level["L4"]["other_proposition_id"] == "p2"
     assert by_level["L2"]["proposition_id"] == "p6"
     assert by_level["L3"]["proposition_id"] == "p7"
 
@@ -289,18 +288,32 @@ def test_reconciliation_levels_and_scenario_skip():
     assert any(s["proposition_id"] == "p1" for s in scenarios)
     assert all(s["proposition_id"] != "p6" for s in scenarios)
 
-    finished = agent.invoke(
+    open_l4 = [
+        c
+        for c in _load_json(r["files"], CONFLICTS_PATH)["conflicts"]
+        if c["level"] == "L4" and c["status"] == "open"
+    ]
+    assert len(open_l4) == 1
+    assert open_l4[0]["source"] == "assertion_test"
+    assert open_l4[0]["other_proposition_id"] == "p2"
+
+    r = agent.invoke(
         Command(
             resume={
                 "resolutions": [
                     {"conflict_id": by_level["L2"]["id"], "action": "dismiss"},
                     {"conflict_id": by_level["L3"]["id"], "action": "dismiss"},
-                    {"conflict_id": by_level["L4"]["id"], "action": "dismiss"},
                 ]
             }
         ),
         config=config,
     )
+    iteration = r["__interrupt__"][0].value
+    assert iteration["kind"] == "iteration"
+    assert iteration["conflict_id"] == open_l4[0]["id"]
+    assert iteration["proposed_activity"] == "domain_modeling"
+
+    finished = agent.invoke(Command(resume="yes"), config=config)
     assert finished.get("__interrupt__") is None
     assert agent.get_state(config).next == ()
 
@@ -310,6 +323,9 @@ def test_reconciliation_levels_and_scenario_skip():
     assert "L2" in levels.values()
     assert "L3" in levels.values()
     assert "L4" in levels.values()
+    l4 = next(c for c in conflicts if c["level"] == "L4")
+    assert l4["status"] == "resolved"
+    assert l4["resolution"]["action"] == "iterate"
     assert all(
         c["source"] == "reconciliation" for c in conflicts if c["level"] in ("L2", "L3")
     )

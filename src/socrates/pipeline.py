@@ -70,6 +70,16 @@ class PipelineStore:
         data["active"] = None
         self._save(data)
 
+    def reopen(self, activity: ModelingActivity) -> dict[str, Any]:
+        """Reopen a Modeling Activity for Iteration; drop it and everything downstream."""
+        idx = ACTIVITIES_IN_ORDER.index(activity)
+        data = {
+            "completed": list(ACTIVITIES_IN_ORDER[:idx]),
+            "active": activity,
+        }
+        self._save(data)
+        return data
+
     def snapshot(self) -> dict[str, Any]:
         return self._load()
 

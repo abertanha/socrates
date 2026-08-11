@@ -4,7 +4,7 @@ Deterministic harness logic for Inference passes. From pass 2, Reconciliation
 runs before Scenario generation / Assertion Tests and yields only L2/L3.
 Conflict Levels are classified from the parties' lifecycle states. L4 arises
 only from Assertion Tests on intersection Scenarios exercising two Accepted
-Propositions.
+Propositions and is handed to Iteration (not Probe-resolved).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from socrates.paths import (
     NEED_PATH,
     SCENARIOS_PATH,
 )
+from socrates.pipeline import ACTIVITIES_IN_ORDER, ModelingActivity, PipelineStore
 from socrates.proposition import Proposition, PropositionStore, normalize_statement
 
 ScenarioEdge = Literal["zero", "one", "many", "none", "intersection"]
@@ -88,6 +89,18 @@ def classify_conflict_level(
     if other.status == "accepted" or left.status == "accepted":
         return "L2"
     return "L1"
+
+
+def propose_iteration_activity(
+    left: Proposition,
+    right: Proposition,
+) -> ModelingActivity:
+    """Most-upstream Modeling Activity whose output the L4 parties invalidate."""
+    idx = min(
+        ACTIVITIES_IN_ORDER.index(left.activity),
+        ACTIVITIES_IN_ORDER.index(right.activity),
+    )
+    return ACTIVITIES_IN_ORDER[idx]
 
 
 class InferenceEngine:
@@ -319,13 +332,18 @@ class InferenceEngine:
         return surfaced
 
     def probe_batch(self) -> dict[str, Any]:
-        """Gather open Conflicts into a Batch, Probe the user, apply resolutions."""
+        """Gather open L1–L3 Conflicts into a Batch; L4 is Iteration, not Probe."""
         conflicts = self._load_conflicts()
         open_conflicts = [
-            c for c in conflicts if c.status == "open" and c.batch_id is None
+            c
+            for c in conflicts
+            if c.status == "open" and c.batch_id is None and c.level != "L4"
         ]
         if not open_conflicts:
-            raise ValueError("No open Conflicts to Probe")
+            raise ValueError(
+                "No Probe-resolvable Conflicts (L1–L3); "
+                "L4 Conflicts require Iteration via run_iteration"
+            )
 
         batches = self._load_batches()
         batch = Batch(
@@ -367,6 +385,69 @@ class InferenceEngine:
             "notifications": self._propositions.list_notifications(),
         }
 
+    def run_iteration(self, conflict_id: str) -> dict[str, Any]:
+        """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen."""
+        conflicts = self._load_conflicts()
+        conflict = next((c for c in conflicts if c.id == conflict_id), None)
+        if conflict is None:
+            raise ValueError(f"Unknown Conflict {conflict_id!r}")
+        if conflict.level != "L4":
+            raise ValueError(
+                f"Iteration is only for L4 Conflicts; {conflict_id} is {conflict.level}"
+            )
+        if conflict.status != "open":
+            raise ValueError(f"Conflict {conflict_id} is not open")
+        if not conflict.other_proposition_id:
+            raise ValueError("L4 Conflict requires other_proposition_id")
+
+        left = self._propositions.get(conflict.proposition_id)
+        right = self._propositions.get(conflict.other_proposition_id)
+        proposed = propose_iteration_activity(left, right)
+
+        answer = interrupt_iteration(
+            {
+                "kind": "iteration",
+                "conflict_id": conflict.id,
+                "proposed_activity": proposed,
+                "summary": conflict.summary,
+                "parties": [
+                    {
+                        "id": left.id,
+                        "statement": left.statement,
+                        "activity": left.activity,
+                        "status": left.status,
+                    },
+                    {
+                        "id": right.id,
+                        "statement": right.statement,
+                        "activity": right.activity,
+                        "status": right.status,
+                    },
+                ],
+                "question": (
+                    f"L4 Conflict {conflict.id} invalidates established beliefs. "
+                    f"Confirm reopening Modeling Activity '{proposed}'?"
+                ),
+            }
+        )
+        confirmed = _parse_iteration_confirm(answer, proposed)
+        pipeline = PipelineStore(self._backend).reopen(confirmed)
+
+        conflict.status = "resolved"
+        conflict.resolution = {
+            "action": "iterate",
+            "proposed_activity": proposed,
+            "activity": confirmed,
+        }
+        self._save_conflicts(conflicts)
+
+        return {
+            "conflict_id": conflict.id,
+            "proposed_activity": proposed,
+            "confirmed_activity": confirmed,
+            "pipeline": pipeline,
+        }
+
     def _apply_resolutions(
         self,
         batch_id: str,
@@ -395,6 +476,11 @@ class InferenceEngine:
                     f"Conflict {conflict_id!r} is not in open Batch {batch_id}"
                 )
             conflict = by_id[conflict_id]
+            if conflict.level == "L4":
+                raise ValueError(
+                    "L4 Conflicts are handed to Iteration, not Probe-resolved; "
+                    "use run_iteration"
+                )
             if conflict.level == "L3" and action != "dismiss":
                 raise ValueError(
                     "L3 conflicts are blocked by the Rejection Guardrail; "
@@ -610,6 +696,13 @@ def interrupt_probe(payload: dict[str, Any]) -> Any:
     return interrupt(payload)
 
 
+def interrupt_iteration(payload: dict[str, Any]) -> Any:
+    """Indirection so tests can import InferenceEngine without binding interrupt early."""
+    from langgraph.types import interrupt
+
+    return interrupt(payload)
+
+
 def _probe_routing(level: ConflictLevel) -> str:
     if level == "L1":
         return "inline"
@@ -618,3 +711,32 @@ def _probe_routing(level: ConflictLevel) -> str:
     if level == "L3":
         return "blocked"
     return "iteration"
+
+
+def _parse_iteration_confirm(
+    answer: Any,
+    proposed: ModelingActivity,
+) -> ModelingActivity:
+    """Accept yes/proposed, or an explicit Modeling Activity override."""
+    if answer is True or answer == "yes":
+        return proposed
+    if isinstance(answer, dict):
+        if answer.get("confirm") is True or answer.get("confirm") == "yes":
+            activity = answer.get("activity", proposed)
+        else:
+            activity = answer.get("activity") or answer.get("confirmed_activity")
+        if activity is None:
+            raise ValueError(
+                "Iteration confirm must accept the proposal or name an activity"
+            )
+        answer = activity
+    if isinstance(answer, str):
+        activity = answer.strip()
+        if activity in ACTIVITIES_IN_ORDER:
+            return activity  # type: ignore[return-value]
+        if activity in ("yes", "confirm", "true"):
+            return proposed
+    raise ValueError(
+        "Iteration resume must confirm the proposed activity "
+        f"or name one of {list(ACTIVITIES_IN_ORDER)}"
+    )

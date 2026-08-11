@@ -4,9 +4,13 @@
 
 **Blocked by:** 05 — Reconciliation + Conflict Levels (sibling to 06; independent handler).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An L4 conflict is routed to Iteration, not resolved by a Probe.
-- [ ] Iteration proposes the most-upstream Modeling Activity whose output the L4 invalidates, based on the conflicting Propositions' nature.
-- [ ] The user confirms which phase reopens.
-- [ ] The reopened activity re-runs against the current Model.
+- [x] An L4 conflict is routed to Iteration, not resolved by a Probe.
+- [x] Iteration proposes the most-upstream Modeling Activity whose output the L4 invalidates, based on the conflicting Propositions' nature.
+- [x] The user confirms which phase reopens.
+- [x] The reopened activity re-runs against the current Model.
+
+## Comments
+
+- `run_iteration` tool + `PipelineStore.reopen`; most-upstream from party `activity` tags; confirm via interrupt (`kind: iteration`). `probe_batch` gathers only L1–L3. Orchestration coverage: `tests/test_iteration_l4.py`.
