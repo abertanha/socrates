@@ -13,10 +13,16 @@ from deepagents import (
 )
 from deepagents.backends import StateBackend
 from deepagents.backends.protocol import BackendProtocol
+from deepagents.middleware.filesystem import FilesystemMiddleware
+from deepagents.middleware.subagents import CompiledSubAgent, create_sub_agent
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
+from socrates.coverage import (
+    RECURSION_LIMIT_GENEROUS,
+    BudgetAwareSubagent,
+)
 from socrates.model import ModelProvider
 from socrates.pipeline import (
     ACTIVITIES_IN_ORDER,
@@ -29,14 +35,18 @@ SYSTEM_PROMPT = """You are Socrates, a maieutic modeling harness.
 
 Session discipline:
 1. Call `run_opening` to elicit the user's Need and persist it.
-2. Run the three Modeling Activities in precedence via the `task` tool:
+2. Call `select_exploration_budget` at the start of each Inference pass so
+   Coverage (declining Conflict signals) sets the recursion_limit — generous
+   when sparse, lean when mature. The budget is an exploration allowance, not
+   a quality gate. Subagents receive the same limit (no silent fallback to 25).
+3. Run the three Modeling Activities in precedence via the `task` tool:
    `requirements` → `domain-modeling` → `behavioral-specification`.
    Each is a specialist subagent with its own posture and tool subset;
    do not skip or reorder them. Prefer proposing inside the active activity.
-3. On the user's signal, `accept_proposition` or `reject_proposition`
+4. On the user's signal, `accept_proposition` or `reject_proposition`
    (rejection always needs an explicit reason). Indirect Acceptance may pass
    via_proposition_id.
-4. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
+5. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
    `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3.
    Probe routing: L1 in-line; L2 may Supersede (cascade Degrades dependents,
    user is notified not asked); L3 blocked by Rejection Guardrail (dismiss or
@@ -44,9 +54,9 @@ Session discipline:
    recommends against deferring critical ones (high level / central Propositions).
    Deferred Conflicts re-raise when new information touches their Propositions.
    L4 (Accepted×Accepted) → `run_iteration` (or defer).
-5. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
+6. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
    Conflicts appear as a non-blocking, criticality-weighted warning.
-6. When Satisfaction is recorded, stop. Never declare the Model done yourself.
+7. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """
 
 _PROFILES_REGISTERED = False
@@ -71,24 +81,36 @@ def _build_activity_subagents(
     backend: BackendProtocol,
     default_model: ModelProvider,
     activity_models: Mapping[ModelingActivity, ModelProvider] | None,
-) -> list[SubAgent]:
-    subagents: list[SubAgent] = []
+) -> list[SubAgent | CompiledSubAgent]:
+    """Compile activity specialists with explicit recursion_limit propagation (#1698)."""
+    subagents: list[SubAgent | CompiledSubAgent] = []
     for activity in ACTIVITIES_IN_ORDER:
         model = (
             activity_models.get(activity, default_model)
             if activity_models is not None
             else default_model
         )
+        name = ACTIVITY_SUBAGENT_TYPE[activity]
+        raw: SubAgent = {
+            "name": name,
+            "description": (
+                f"Specialist for the {activity.replace('_', ' ').title()} "
+                "Modeling Activity."
+            ),
+            "system_prompt": ACTIVITY_PROMPTS[activity],
+            "tools": list(build_activity_tools(backend, activity)),
+            "model": model,
+            # FilesystemMiddleware supplies the `files` state channel that
+            # StateBackend tools need (same stack create_deep_agent adds for
+            # raw SubAgent specs).
+            "middleware": [FilesystemMiddleware(backend=backend)],
+        }
+        inner = create_sub_agent(raw)
         subagents.append(
             {
-                "name": ACTIVITY_SUBAGENT_TYPE[activity],
-                "description": (
-                    f"Specialist for the {activity.replace('_', ' ').title()} "
-                    "Modeling Activity."
-                ),
-                "system_prompt": ACTIVITY_PROMPTS[activity],
-                "tools": list(build_activity_tools(backend, activity)),
-                "model": model,
+                "name": name,
+                "description": raw["description"],
+                "runnable": BudgetAwareSubagent(inner, backend, name),
             }
         )
     return subagents
@@ -116,7 +138,7 @@ def create_socrates_session(
     _ensure_profiles_registered()
     fs = backend if backend is not None else StateBackend()
     saver = checkpointer if checkpointer is not None else InMemorySaver()
-    return create_deep_agent(
+    agent = create_deep_agent(
         model=model,
         tools=list(build_session_tools(fs)),
         system_prompt=SYSTEM_PROMPT,
@@ -124,3 +146,6 @@ def create_socrates_session(
         checkpointer=saver,
         subagents=_build_activity_subagents(fs, model, activity_models),
     )
+    # Start generous (Coverage unknown / sparse). select_exploration_budget
+    # and BudgetAwareSubagent refine the limit from FS signals during the run.
+    return agent.with_config({"recursion_limit": RECURSION_LIMIT_GENEROUS})

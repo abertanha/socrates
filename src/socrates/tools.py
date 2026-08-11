@@ -14,6 +14,7 @@ from socrates.paths import NEED_PATH
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore
 from socrates.inference import InferenceEngine
+from socrates.coverage import CoverageStore
 
 OPENING_QUESTION = "What Need should this Model serve?"
 SATISFACTION_QUESTION = (
@@ -58,6 +59,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     """Tools for the main Socrates orchestrator."""
     store = PropositionStore(backend)
     inference = InferenceEngine(backend)
+    coverage = CoverageStore(backend)
 
     @tool
     def run_opening() -> str:
@@ -244,6 +246,20 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps({"ok": True, **result})
 
+    @tool
+    def select_exploration_budget() -> str:
+        """Set this pass's recursion_limit from Coverage (∝ 1/Coverage).
+
+        Coverage rises as Conflicts-per-pass decline. The budget is an
+        exploration allowance only — never a quality gate (ADR-0002/0004).
+        Subagents receive the same limit (deepagents #1698).
+        """
+        try:
+            budget = coverage.select_budget()
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps({"ok": True, **budget})
+
     return [
         run_opening,
         await_satisfaction,
@@ -256,6 +272,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         probe_batch,
         run_iteration,
         defer_conflict,
+        select_exploration_budget,
     ]
 
 

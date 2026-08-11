@@ -4,9 +4,13 @@
 
 **Blocked by:** 04 — Probe loop (needs passes running to measure Coverage).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Coverage is read pass-over-pass from declining signals (e.g., Conflicts surfaced per pass).
-- [ ] The per-pass recursion limit scales inversely with Coverage.
-- [ ] The chosen limit is propagated to spawned subagents (no silent fallback to 25 — issue #1698).
-- [ ] The budget is an exploration allowance, not a quality gate.
+- [x] Coverage is read pass-over-pass from declining signals (e.g., Conflicts surfaced per pass).
+- [x] The per-pass recursion limit scales inversely with Coverage.
+- [x] The chosen limit is propagated to spawned subagents (no silent fallback to 25 — issue #1698).
+- [x] The budget is an exploration allowance, not a quality gate.
+
+## Comments
+
+- `CoverageStore` + `select_exploration_budget`; `BudgetAwareSubagent` stamps `recursion_limit` on activity CompiledSubAgents and records propagation in `/model/coverage.json`. Orchestration coverage: `tests/test_coverage_budget.py`.

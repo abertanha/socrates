@@ -22,6 +22,7 @@ from socrates.paths import (
     NEED_PATH,
     SCENARIOS_PATH,
 )
+from socrates.coverage import CoverageStore
 from socrates.pipeline import ACTIVITIES_IN_ORDER, ModelingActivity, PipelineStore
 from socrates.proposition import Proposition, PropositionStore, normalize_statement
 
@@ -137,6 +138,7 @@ class InferenceEngine:
     def __init__(self, backend: BackendProtocol) -> None:
         self._backend = backend
         self._propositions = PropositionStore(backend)
+        self._coverage = CoverageStore(backend)
 
     def current_pass(self) -> int:
         """Pass 1 is the Opening-seeded pass; increments after each probed Batch."""
@@ -223,6 +225,7 @@ class InferenceEngine:
         state["reconciliation_pass"] = pass_no
         state["blocked_proposition_ids"] = sorted(blocked)
         self._save_inference_state(state)
+        self._coverage.add_conflicts(pass_no, len(surfaced))
         return surfaced
 
     def record_scenarios(
@@ -358,6 +361,7 @@ class InferenceEngine:
 
         conflicts.extend(surfaced)
         self._save_conflicts(conflicts)
+        self._coverage.add_conflicts(self.current_pass(), len(surfaced))
         self.touch_propositions(proposition_id)
         return surfaced
 
