@@ -50,6 +50,7 @@ def _proposition_payload(prop) -> dict:
         "activity": prop.activity,
         "reason": prop.reason,
         "flagged_against_id": prop.flagged_against_id,
+        "accepted_via": prop.accepted_via,
     }
 
 
@@ -95,19 +96,29 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         return json.dumps(_proposition_payload(prop))
 
     @tool
-    def accept_proposition(proposition_id: str) -> str:
-        """Accept a Candidate into the Model after the user's direct Acceptance signal."""
+    def accept_proposition(
+        proposition_id: str,
+        via_proposition_id: str = "",
+    ) -> str:
+        """Accept a Candidate into the Model after the user's direct Acceptance signal.
+
+        Optional via_proposition_id marks indirect Acceptance (foundation for cascades).
+        """
         interrupt(
             {
                 "kind": "accept",
                 "proposition_id": proposition_id,
+                "via_proposition_id": via_proposition_id or None,
                 "question": (
                     f"Do you Accept Proposition {proposition_id} into the Model?"
                 ),
             }
         )
         try:
-            prop = store.accept(proposition_id)
+            prop = store.accept(
+                proposition_id,
+                via_proposition_id=via_proposition_id or None,
+            )
         except (ValueError, KeyError) as exc:
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps(_proposition_payload(prop))
@@ -223,18 +234,25 @@ def build_activity_tools(
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps(_proposition_payload(prop))
 
-    def accept_proposition(proposition_id: str) -> str:
+    def accept_proposition(
+        proposition_id: str,
+        via_proposition_id: str = "",
+    ) -> str:
         interrupt(
             {
                 "kind": "accept",
                 "proposition_id": proposition_id,
+                "via_proposition_id": via_proposition_id or None,
                 "question": (
                     f"Do you Accept Proposition {proposition_id} into the Model?"
                 ),
             }
         )
         try:
-            prop = store.accept(proposition_id)
+            prop = store.accept(
+                proposition_id,
+                via_proposition_id=via_proposition_id or None,
+            )
         except (ValueError, KeyError) as exc:
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps(_proposition_payload(prop))

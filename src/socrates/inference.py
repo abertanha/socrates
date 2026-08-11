@@ -28,7 +28,9 @@ ScenarioEdge = Literal["zero", "one", "many", "none", "intersection"]
 ConflictKind = Literal["contradiction", "omission", "contrariety", "ambiguity"]
 ConflictLevel = Literal["L1", "L2", "L3", "L4"]
 ConflictSource = Literal["reconciliation", "assertion_test"]
-ProbeAction = Literal["revise_proposition", "add_proposition", "dismiss"]
+ProbeAction = Literal[
+    "revise_proposition", "add_proposition", "dismiss", "supersede"
+]
 
 MIN_SCENARIOS_PER_PROPOSITION = 2
 VALID_EDGES: frozenset[str] = frozenset(
@@ -351,6 +353,7 @@ class InferenceEngine:
                         "summary": c.summary,
                         "level": c.level,
                         "source": c.source,
+                        "routing": _probe_routing(c.level),
                     }
                     for c in open_conflicts
                 ],
@@ -361,6 +364,7 @@ class InferenceEngine:
             "batch_id": batch.id,
             "conflict_ids": batch.conflict_ids,
             "applied": applied,
+            "notifications": self._propositions.list_notifications(),
         }
 
     def _apply_resolutions(
@@ -391,7 +395,16 @@ class InferenceEngine:
                     f"Conflict {conflict_id!r} is not in open Batch {batch_id}"
                 )
             conflict = by_id[conflict_id]
+            if conflict.level == "L3" and action != "dismiss":
+                raise ValueError(
+                    "L3 conflicts are blocked by the Rejection Guardrail; "
+                    "only dismiss is allowed"
+                )
             if action == "revise_proposition":
+                if conflict.level == "L2":
+                    # L2 may revise the new side in-line, but Supersede is the
+                    # dedicated displacement path for the Accepted party.
+                    pass
                 statement = str(raw.get("statement", "")).strip()
                 if not statement:
                     raise ValueError("revise_proposition requires statement")
@@ -423,12 +436,42 @@ class InferenceEngine:
                         "activity": prop.activity,
                     }
                 )
+            elif action == "supersede":
+                if conflict.level != "L2":
+                    raise ValueError(
+                        f"Supersede is only valid for L2 conflicts; "
+                        f"{conflict_id} is {conflict.level}"
+                    )
+                reason = str(raw.get("reason", "")).strip()
+                if not reason:
+                    raise ValueError("supersede requires reason")
+                accepted_id = conflict.other_proposition_id
+                if not accepted_id:
+                    raise ValueError("L2 conflict missing other_proposition_id (Accepted)")
+                result = self._propositions.supersede(
+                    accepted_id,
+                    conflict.proposition_id,
+                    reason,
+                )
+                applied.append(
+                    {
+                        "conflict_id": conflict_id,
+                        "action": action,
+                        **result,
+                    }
+                )
             elif action == "dismiss":
-                applied.append({"conflict_id": conflict_id, "action": action})
+                applied.append(
+                    {
+                        "conflict_id": conflict_id,
+                        "action": action,
+                        "blocked": conflict.level == "L3",
+                    }
+                )
             else:
                 raise ValueError(
                     f"Unknown Probe action {action!r}; expected one of "
-                    f"revise_proposition, add_proposition, dismiss"
+                    f"revise_proposition, add_proposition, supersede, dismiss"
                 )
             conflict.status = "resolved"
             conflict.resolution = dict(raw)
@@ -565,3 +608,13 @@ def interrupt_probe(payload: dict[str, Any]) -> Any:
     from langgraph.types import interrupt
 
     return interrupt(payload)
+
+
+def _probe_routing(level: ConflictLevel) -> str:
+    if level == "L1":
+        return "inline"
+    if level == "L2":
+        return "supersede"
+    if level == "L3":
+        return "blocked"
+    return "iteration"

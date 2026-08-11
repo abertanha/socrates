@@ -34,11 +34,12 @@ Session discipline:
    Each is a specialist subagent with its own posture and tool subset;
    do not skip or reorder them. Prefer proposing inside the active activity.
 3. On the user's signal, `accept_proposition` or `reject_proposition`
-   (rejection always needs an explicit reason).
+   (rejection always needs an explicit reason). Indirect Acceptance may pass
+   via_proposition_id.
 4. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
-   `record_scenarios` → `run_assertion_tests` (L1/L4; L4 only via intersection
-   Scenarios on two Accepted Propositions) → `probe_batch`.
-   Skip Scenarios for material Reconciliation already contradicted.
+   `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch`.
+   Probe routing: L1 in-line; L2 may Supersede (cascade Degrades dependents,
+   user is notified not asked); L3 blocked by Rejection Guardrail (dismiss only).
 5. Call `await_satisfaction` so the user can signal Satisfaction.
 6. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """
