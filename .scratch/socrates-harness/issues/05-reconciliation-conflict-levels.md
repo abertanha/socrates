@@ -4,9 +4,13 @@
 
 **Blocked by:** 04 — Probe loop.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] From pass 2, Reconciliation surfaces latent conflicts between the latest answers and the existing Model before Assertion Tests run.
-- [ ] Every conflict is classified L1–L4 by the lifecycle state of its parties.
-- [ ] Reconciliation yields only L2/L3 (one party is always new); L4 arises only from Assertion Tests exercising two Accepted Propositions together.
-- [ ] Scenario generation is skipped on material Reconciliation has already contradicted.
+- [x] From pass 2, Reconciliation surfaces latent conflicts between the latest answers and the existing Model before Assertion Tests run.
+- [x] Every conflict is classified L1–L4 by the lifecycle state of its parties.
+- [x] Reconciliation yields only L2/L3 (one party is always new); L4 arises only from Assertion Tests exercising two Accepted Propositions together.
+- [x] Scenario generation is skipped on material Reconciliation has already contradicted.
+
+## Comments
+
+- `reconcile` tool + `classify_conflict_level`. Pass 2+ requires Reconciliation before Scenarios/Assertion Tests. L2/L3 block Scenario generation for the new Proposition; L4 only via intersection Assertion Tests on two Accepted parties. Orchestration coverage: `tests/test_reconciliation_conflict_levels.py`.

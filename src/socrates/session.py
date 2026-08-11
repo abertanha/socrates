@@ -35,9 +35,10 @@ Session discipline:
    do not skip or reorder them. Prefer proposing inside the active activity.
 3. On the user's signal, `accept_proposition` or `reject_proposition`
    (rejection always needs an explicit reason).
-4. Inference pass: `record_scenarios` (several Need-relevant Scenarios per
-   Proposition) → `run_assertion_tests` → `probe_batch` (one Batch, resolved
-   together via interrupt-gated Probe). Resolving may revise or grow the Model.
+4. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
+   `record_scenarios` → `run_assertion_tests` (L1/L4; L4 only via intersection
+   Scenarios on two Accepted Propositions) → `probe_batch`.
+   Skip Scenarios for material Reconciliation already contradicted.
 5. Call `await_satisfaction` so the user can signal Satisfaction.
 6. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """

@@ -132,6 +132,24 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         return json.dumps(_proposition_payload(prop))
 
     @tool
+    def reconcile(findings_json: str) -> str:
+        """From pass 2, surface latent L2/L3 Conflicts before Scenarios / Assertion Tests."""
+        try:
+            findings = json.loads(findings_json)
+            if not isinstance(findings, list):
+                raise ValueError("findings_json must be a JSON array")
+            surfaced = inference.reconcile(findings)
+        except (ValueError, json.JSONDecodeError, KeyError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps(
+            {
+                "ok": True,
+                "pass": inference.current_pass(),
+                "conflicts": [c.__dict__ for c in surfaced],
+            }
+        )
+
+    @tool
     def record_scenarios(proposition_id: str, scenarios_json: str) -> str:
         """Record several Need-relevant Scenarios for a Proposition (Relevance Filter enforced)."""
         try:
@@ -182,6 +200,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         propose_proposition,
         accept_proposition,
         reject_proposition,
+        reconcile,
         record_scenarios,
         run_assertion_tests,
         probe_batch,
