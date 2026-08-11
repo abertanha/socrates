@@ -14,7 +14,7 @@ from typing import Any, Literal
 from deepagents.backends.protocol import BackendProtocol
 
 from socrates.paths import PROPOSITIONS_PATH, REJECTION_GUARDRAIL_PATH
-from socrates.pipeline import ModelingActivity, PipelineStore
+from socrates.pipeline import ModelingActivity
 
 PropositionStatus = Literal["candidate", "accepted", "rejected", "flagged"]
 
@@ -48,7 +48,6 @@ class PropositionStore:
 
     def __init__(self, backend: BackendProtocol) -> None:
         self._backend = backend
-        self._pipeline = PipelineStore(backend)
 
     def propose(self, statement: str, activity: ModelingActivity) -> Proposition:
         statement = statement.strip()
@@ -62,8 +61,6 @@ class PropositionStore:
                 "Behavioral Specification admits conceptual domain rules only; "
                 "functional requirements ('the system shall...') are out of scope"
             )
-
-        self._pipeline.begin(activity)
 
         propositions = self._load_propositions()
         guardrail = self._load_guardrail()
@@ -112,6 +109,21 @@ class PropositionStore:
         self._save_propositions(propositions)
         return prop
 
+    def revise(self, proposition_id: str, statement: str) -> Proposition:
+        """Reshape a Proposition; Accepted ones Degrade back to Candidate (ADR-0003)."""
+        statement = statement.strip()
+        if not statement:
+            raise ValueError("Revised statement must not be empty")
+        propositions = self._load_propositions()
+        prop = self._get(propositions, proposition_id)
+        if prop.status == "rejected":
+            raise ValueError(f"Cannot revise Rejected Proposition {proposition_id}")
+        prop.statement = statement
+        if prop.status == "accepted":
+            prop.status = "candidate"
+        self._save_propositions(propositions)
+        return prop
+
     def reject(self, proposition_id: str, reason: str) -> Proposition:
         reason = reason.strip()
         if not reason:
@@ -142,6 +154,9 @@ class PropositionStore:
     def list_propositions(self) -> list[Proposition]:
         return self._load_propositions()
 
+    def get(self, proposition_id: str) -> Proposition:
+        return self._get(self._load_propositions(), proposition_id)
+
     def list_guardrail(self) -> list[GuardrailEntry]:
         return self._load_guardrail()
 
@@ -149,7 +164,7 @@ class PropositionStore:
         for prop in propositions:
             if prop.id == proposition_id:
                 return prop
-        raise KeyError(f"Unknown Proposition id: {proposition_id}")
+        raise ValueError(f"Unknown Proposition id: {proposition_id}")
 
     def _next_id(self, propositions: list[Proposition]) -> str:
         return f"p{len(propositions) + 1}"

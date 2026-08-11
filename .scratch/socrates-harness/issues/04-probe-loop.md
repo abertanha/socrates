@@ -4,9 +4,13 @@
 
 **Blocked by:** 03 — modeling activity pipeline.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Scenarios are generated from the current Model and kept Need-relevant by the Relevance Filter; several per Proposition.
-- [ ] Assertion Tests stretch Propositions toward their Elasticity limit and surface Conflicts.
-- [ ] Surfaced Conflicts are gathered into a Batch and presented together, not one at a time.
-- [ ] The user resolves Conflicts via an interrupt-gated Probe, and resolution updates the Model.
+- [x] Scenarios are generated from the current Model and kept Need-relevant by the Relevance Filter; several per Proposition.
+- [x] Assertion Tests stretch Propositions toward their Elasticity limit and surface Conflicts.
+- [x] Surfaced Conflicts are gathered into a Batch and presented together, not one at a time.
+- [x] The user resolves Conflicts via an interrupt-gated Probe, and resolution updates the Model.
+
+## Comments
+
+- `InferenceEngine` + tools `record_scenarios` / `run_assertion_tests` / `probe_batch`. Relevance Filter requires `need_relevant=true`; ≥2 Scenarios per Proposition; Probe interrupt presents the full Batch; resolutions revise (Degrade if Accepted), add new ground, or dismiss. Orchestration coverage: `tests/test_probe_loop.py`.

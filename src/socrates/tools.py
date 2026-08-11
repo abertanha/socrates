@@ -13,6 +13,7 @@ from langgraph.types import interrupt
 from socrates.paths import NEED_PATH
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore
+from socrates.inference import InferenceEngine
 
 OPENING_QUESTION = "What Need should this Model serve?"
 SATISFACTION_QUESTION = (
@@ -55,6 +56,7 @@ def _proposition_payload(prop) -> dict:
 def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     """Tools for the main Socrates orchestrator."""
     store = PropositionStore(backend)
+    inference = InferenceEngine(backend)
 
     @tool
     def run_opening() -> str:
@@ -129,12 +131,60 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps(_proposition_payload(prop))
 
+    @tool
+    def record_scenarios(proposition_id: str, scenarios_json: str) -> str:
+        """Record several Need-relevant Scenarios for a Proposition (Relevance Filter enforced)."""
+        try:
+            scenarios = json.loads(scenarios_json)
+            if not isinstance(scenarios, list):
+                raise ValueError("scenarios_json must be a JSON array")
+            recorded = inference.record_scenarios(proposition_id, scenarios)
+        except (ValueError, json.JSONDecodeError, KeyError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps(
+            {
+                "ok": True,
+                "proposition_id": proposition_id,
+                "scenarios": [s.__dict__ for s in recorded],
+            }
+        )
+
+    @tool
+    def run_assertion_tests(proposition_id: str, outcomes_json: str) -> str:
+        """Run Assertion Tests for a Proposition; non-surviving Scenarios surface Conflicts."""
+        try:
+            outcomes = json.loads(outcomes_json)
+            if not isinstance(outcomes, list):
+                raise ValueError("outcomes_json must be a JSON array")
+            surfaced = inference.run_assertion_tests(proposition_id, outcomes)
+        except (ValueError, json.JSONDecodeError, KeyError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps(
+            {
+                "ok": True,
+                "proposition_id": proposition_id,
+                "conflicts": [c.__dict__ for c in surfaced],
+            }
+        )
+
+    @tool
+    def probe_batch() -> str:
+        """Gather open Conflicts into one Batch and Probe the user to resolve them together."""
+        try:
+            result = inference.probe_batch()
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps({"ok": True, **result})
+
     return [
         run_opening,
         await_satisfaction,
         propose_proposition,
         accept_proposition,
         reject_proposition,
+        record_scenarios,
+        run_assertion_tests,
+        probe_batch,
     ]
 
 
@@ -148,6 +198,7 @@ def build_activity_tools(
 
     def propose_proposition(statement: str) -> str:
         try:
+            pipeline.begin(activity)
             prop = store.propose(statement, activity=activity)
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
