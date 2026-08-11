@@ -30,7 +30,11 @@ ConflictKind = Literal["contradiction", "omission", "contrariety", "ambiguity"]
 ConflictLevel = Literal["L1", "L2", "L3", "L4"]
 ConflictSource = Literal["reconciliation", "assertion_test"]
 ProbeAction = Literal[
-    "revise_proposition", "add_proposition", "dismiss", "supersede"
+    "revise_proposition",
+    "add_proposition",
+    "dismiss",
+    "supersede",
+    "defer",
 ]
 
 MIN_SCENARIOS_PER_PROPOSITION = 2
@@ -61,9 +65,10 @@ class Conflict:
     source: ConflictSource
     scenario_id: str | None = None
     other_proposition_id: str | None = None
-    status: Literal["open", "resolved"] = "open"
+    status: Literal["open", "resolved", "deferred"] = "open"
     batch_id: str | None = None
     resolution: dict[str, Any] | None = None
+    re_raised: bool = False
 
 
 @dataclass
@@ -101,6 +106,29 @@ def propose_iteration_activity(
         ACTIVITIES_IN_ORDER.index(right.activity),
     )
     return ACTIVITIES_IN_ORDER[idx]
+
+
+def assess_deferral_criticality(
+    conflict: Conflict,
+    left: Proposition,
+    right: Proposition | None = None,
+) -> dict[str, Any]:
+    """Operational blocking-ness for progress — never Model correctness (ADR-0002)."""
+    reasons: list[str] = []
+    if conflict.level in ("L2", "L3", "L4"):
+        reasons.append("high_conflict_level")
+    if left.status == "accepted":
+        reasons.append("central_proposition")
+    if right is not None and right.status == "accepted":
+        reasons.append("central_proposition")
+    # Preserve order, drop duplicates.
+    reasons = list(dict.fromkeys(reasons))
+    critical = bool(reasons)
+    return {
+        "critical": critical,
+        "recommend_against": critical,
+        "reasons": reasons,
+    }
 
 
 class InferenceEngine:
@@ -244,6 +272,7 @@ class InferenceEngine:
 
         existing.extend(recorded)
         self._save_scenarios(existing)
+        self.touch_propositions(proposition_id)
         return recorded
 
     def run_assertion_tests(
@@ -329,6 +358,7 @@ class InferenceEngine:
 
         conflicts.extend(surfaced)
         self._save_conflicts(conflicts)
+        self.touch_propositions(proposition_id)
         return surfaced
 
     def probe_batch(self) -> dict[str, Any]:
@@ -362,18 +392,7 @@ class InferenceEngine:
                 "kind": "probe",
                 "batch_id": batch.id,
                 "conflicts": [
-                    {
-                        "id": c.id,
-                        "proposition_id": c.proposition_id,
-                        "other_proposition_id": c.other_proposition_id,
-                        "scenario_id": c.scenario_id,
-                        "kind": c.kind,
-                        "summary": c.summary,
-                        "level": c.level,
-                        "source": c.source,
-                        "routing": _probe_routing(c.level),
-                    }
-                    for c in open_conflicts
+                    self._probe_conflict_payload(c) for c in open_conflicts
                 ],
             }
         )
@@ -448,6 +467,71 @@ class InferenceEngine:
             "pipeline": pipeline,
         }
 
+    def defer_conflict(self, conflict_id: str) -> dict[str, Any]:
+        """Park an open Conflict (any level) for later — orthogonal to Probe/Iteration."""
+        conflicts = self._load_conflicts()
+        conflict = next((c for c in conflicts if c.id == conflict_id), None)
+        if conflict is None:
+            raise ValueError(f"Unknown Conflict {conflict_id!r}")
+        if conflict.status != "open":
+            raise ValueError(f"Conflict {conflict_id} is not open")
+        criticality = self._criticality_for(conflict)
+        conflict.status = "deferred"
+        conflict.re_raised = False
+        conflict.batch_id = None
+        conflict.resolution = {"action": "defer", "criticality": criticality}
+        self._save_conflicts(conflicts)
+        return {
+            "conflict_id": conflict.id,
+            "status": "deferred",
+            "criticality": criticality,
+        }
+
+    def touch_propositions(self, *proposition_ids: str) -> list[Conflict]:
+        """Re-raise deferred Conflicts whose parties are touched by new information."""
+        touched = {pid for pid in proposition_ids if pid}
+        if not touched:
+            return []
+        conflicts = self._load_conflicts()
+        raised: list[Conflict] = []
+        for conflict in conflicts:
+            if conflict.status != "deferred":
+                continue
+            parties = {conflict.proposition_id}
+            if conflict.other_proposition_id:
+                parties.add(conflict.other_proposition_id)
+            if not parties & touched:
+                continue
+            conflict.status = "open"
+            conflict.batch_id = None
+            conflict.re_raised = True
+            conflict.resolution = None
+            raised.append(conflict)
+        if raised:
+            self._save_conflicts(conflicts)
+        return raised
+
+    def satisfaction_warning(self) -> dict[str, Any] | None:
+        """Non-blocking, criticality-weighted warning for open deferred Conflicts."""
+        deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
+        if not deferred:
+            return None
+        return {
+            "kind": "deferred_conflicts",
+            "blocking": False,
+            "conflicts": [
+                {
+                    "id": c.id,
+                    "level": c.level,
+                    "summary": c.summary,
+                    "proposition_id": c.proposition_id,
+                    "other_proposition_id": c.other_proposition_id,
+                    "criticality": self._criticality_for(c),
+                }
+                for c in deferred
+            ],
+        }
+
     def _apply_resolutions(
         self,
         batch_id: str,
@@ -481,10 +565,10 @@ class InferenceEngine:
                     "L4 Conflicts are handed to Iteration, not Probe-resolved; "
                     "use run_iteration"
                 )
-            if conflict.level == "L3" and action != "dismiss":
+            if conflict.level == "L3" and action not in ("dismiss", "defer"):
                 raise ValueError(
                     "L3 conflicts are blocked by the Rejection Guardrail; "
-                    "only dismiss is allowed"
+                    "only dismiss or defer is allowed"
                 )
             if action == "revise_proposition":
                 if conflict.level == "L2":
@@ -554,10 +638,25 @@ class InferenceEngine:
                         "blocked": conflict.level == "L3",
                     }
                 )
+            elif action == "defer":
+                criticality = self._criticality_for(conflict)
+                conflict.status = "deferred"
+                conflict.re_raised = False
+                conflict.resolution = {"action": "defer", "criticality": criticality}
+                applied.append(
+                    {
+                        "conflict_id": conflict_id,
+                        "action": "defer",
+                        "status": "deferred",
+                        "criticality": criticality,
+                    }
+                )
+                resolved_ids.add(conflict_id)
+                continue
             else:
                 raise ValueError(
                     f"Unknown Probe action {action!r}; expected one of "
-                    f"revise_proposition, add_proposition, supersede, dismiss"
+                    f"revise_proposition, add_proposition, supersede, dismiss, defer"
                 )
             conflict.status = "resolved"
             conflict.resolution = dict(raw)
@@ -618,6 +717,30 @@ class InferenceEngine:
     def _require_proposition(self, proposition_id: str) -> None:
         self._propositions.get(proposition_id)
 
+    def _criticality_for(self, conflict: Conflict) -> dict[str, Any]:
+        left = self._propositions.get(conflict.proposition_id)
+        right = (
+            self._propositions.get(conflict.other_proposition_id)
+            if conflict.other_proposition_id
+            else None
+        )
+        return assess_deferral_criticality(conflict, left, right)
+
+    def _probe_conflict_payload(self, conflict: Conflict) -> dict[str, Any]:
+        return {
+            "id": conflict.id,
+            "proposition_id": conflict.proposition_id,
+            "other_proposition_id": conflict.other_proposition_id,
+            "scenario_id": conflict.scenario_id,
+            "kind": conflict.kind,
+            "summary": conflict.summary,
+            "level": conflict.level,
+            "source": conflict.source,
+            "routing": _probe_routing(conflict.level),
+            "re_raised": conflict.re_raised,
+            "deferral": self._criticality_for(conflict),
+        }
+
     def _require_need(self) -> str:
         result = self._backend.read(NEED_PATH)
         if result.error or result.file_data is None:
@@ -649,6 +772,7 @@ class InferenceEngine:
             data = {k: v for k, v in item.items() if k in allowed}
             data.setdefault("level", "L1")
             data.setdefault("source", "assertion_test")
+            data.setdefault("re_raised", False)
             loaded.append(Conflict(**data))
         return loaded
 

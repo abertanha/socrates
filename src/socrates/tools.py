@@ -75,12 +75,18 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
     @tool
     def await_satisfaction() -> str:
-        """Ask whether the user signals Satisfaction; blocks until they answer."""
+        """Ask whether the user signals Satisfaction; blocks until they answer.
+
+        Surfaces a non-blocking, criticality-weighted warning when deferred
+        Conflicts remain open — Satisfaction is never hard-blocked (ADR-0002).
+        """
+        warning = inference.satisfaction_warning()
         answer = str(
             interrupt(
                 {
                     "kind": "satisfaction",
                     "question": SATISFACTION_QUESTION,
+                    "deferred_warning": warning,
                 }
             )
         )
@@ -93,7 +99,11 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             prop = store.propose(statement, activity=activity)
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(_proposition_payload(prop))
+        raised = inference.touch_propositions(prop.id)
+        payload = _proposition_payload(prop)
+        if raised:
+            payload["re_raised_conflict_ids"] = [c.id for c in raised]
+        return json.dumps(payload)
 
     @tool
     def accept_proposition(
@@ -121,7 +131,11 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             )
         except (ValueError, KeyError) as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(_proposition_payload(prop))
+        raised = inference.touch_propositions(proposition_id)
+        payload = _proposition_payload(prop)
+        if raised:
+            payload["re_raised_conflict_ids"] = [c.id for c in raised]
+        return json.dumps(payload)
 
     @tool
     def reject_proposition(proposition_id: str, reason: str) -> str:
@@ -140,7 +154,11 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             prop = store.reject(proposition_id, reason)
         except (ValueError, KeyError) as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(_proposition_payload(prop))
+        raised = inference.touch_propositions(proposition_id)
+        payload = _proposition_payload(prop)
+        if raised:
+            payload["re_raised_conflict_ids"] = [c.id for c in raised]
+        return json.dumps(payload)
 
     @tool
     def reconcile(findings_json: str) -> str:
@@ -217,6 +235,15 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps({"ok": False, "error": str(exc)})
         return json.dumps({"ok": True, **result})
 
+    @tool
+    def defer_conflict(conflict_id: str) -> str:
+        """Defer an open Conflict (any level) to resolve later; may re-raise on touch."""
+        try:
+            result = inference.defer_conflict(conflict_id)
+        except (ValueError, KeyError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps({"ok": True, **result})
+
     return [
         run_opening,
         await_satisfaction,
@@ -228,6 +255,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         run_assertion_tests,
         probe_batch,
         run_iteration,
+        defer_conflict,
     ]
 
 

@@ -39,10 +39,13 @@ Session discipline:
 4. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
    `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3.
    Probe routing: L1 in-line; L2 may Supersede (cascade Degrades dependents,
-   user is notified not asked); L3 blocked by Rejection Guardrail (dismiss only).
-   L4 (Accepted×Accepted) → `run_iteration` (propose most-upstream activity;
-   user confirms; activity reopens against the current Model).
-5. Call `await_satisfaction` so the user can signal Satisfaction.
+   user is notified not asked); L3 blocked by Rejection Guardrail (dismiss or
+   defer). Any Conflict may be deferred (`defer` / `defer_conflict`); the harness
+   recommends against deferring critical ones (high level / central Propositions).
+   Deferred Conflicts re-raise when new information touches their Propositions.
+   L4 (Accepted×Accepted) → `run_iteration` (or defer).
+5. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
+   Conflicts appear as a non-blocking, criticality-weighted warning.
 6. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """
 
