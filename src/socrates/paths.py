@@ -10,3 +10,7 @@ CONFLICTS_PATH = "/model/conflicts.json"
 INFERENCE_STATE_PATH = "/model/inference_state.json"
 NOTIFICATIONS_PATH = "/model/notifications.json"
 COVERAGE_PATH = "/model/coverage.json"
+# Conceptual Domain Model deliverable (ticket 11 — settled layout).
+DELIVERABLE_GLOSSARY_PATH = "/model/deliverable/glossary.md"
+DELIVERABLE_STRUCTURE_PATH = "/model/deliverable/structure.md"
+DELIVERABLE_RULES_PATH = "/model/deliverable/rules.md"
