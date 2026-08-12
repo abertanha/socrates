@@ -56,7 +56,11 @@ Session discipline:
    resolve via `run_iteration`. Quiet by default: routine Probes/Interviews
    are not Notifications; only unavoidable Conflicts and Supersede cascades.
 6. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
-   Conflicts appear as a non-blocking, criticality-weighted warning.
+   Conflicts appear as a non-blocking, criticality-weighted warning. On
+   affirmative Satisfaction the harness materializes the Conceptual Domain
+   Model as Glossary, Structure, and Rules under `/model/deliverable/`
+   (Implementation-Independence: structure in; technologies and concrete
+   parameter values out).
 7. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """
 

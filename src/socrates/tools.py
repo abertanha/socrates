@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools import tool
 from langgraph.types import interrupt
 
+from socrates.deliverable import DeliverableComposer, is_affirmative_satisfaction
 from socrates.paths import NEED_PATH
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore
@@ -60,6 +61,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     store = PropositionStore(backend)
     inference = InferenceEngine(backend)
     coverage = CoverageStore(backend)
+    deliverable = DeliverableComposer(backend)
 
     @tool
     def run_opening() -> str:
@@ -81,6 +83,8 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
         Surfaces a non-blocking, criticality-weighted warning when deferred
         Conflicts remain open — Satisfaction is never hard-blocked (ADR-0002).
+        On affirmative Satisfaction, materializes the Conceptual Domain Model
+        as Glossary + Structure + Rules under /model/deliverable/.
         """
         warning = inference.satisfaction_warning()
         answer = str(
@@ -92,6 +96,13 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
                 }
             )
         )
+        if is_affirmative_satisfaction(answer):
+            paths = deliverable.materialize()
+            joined = ", ".join(paths)
+            return (
+                f"Satisfaction signal received: {answer}. "
+                f"Conceptual Domain Model materialized at {joined}."
+            )
         return f"Satisfaction signal received: {answer}"
 
     @tool
