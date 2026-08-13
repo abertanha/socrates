@@ -8,6 +8,7 @@ harness's internals reach what the user reads.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 from deepagents.backends import StateBackend
@@ -37,6 +38,14 @@ INTERNAL_LEAKS = (
 )
 
 
+# The art is fixed: it must render exactly as the piece the user prepared.
+# Changing the banner is a deliberate act — update this fingerprint with it.
+BANNER_SHA256 = "051fee8735fe7e085c85f096702a96b2e20cf83e1ae2e07769f8c7cbe71b4d8b"
+BANNER_ROWS = 21
+BANNER_WIDTH = 196
+BANNER_CHARSET = set(" /:\\_|~")
+
+
 def _thread_config() -> dict:
     return {"configurable": {"thread_id": str(uuid.uuid4())}}
 
@@ -58,6 +67,21 @@ def _scripted_model() -> StubChatModel:
     )
 
 
+def test_banner_art_renders_exactly_as_prepared():
+    lines = SOCRATES_BANNER.splitlines()
+    assert len(lines) == BANNER_ROWS
+    assert max(len(line) for line in lines) == BANNER_WIDTH
+
+    # Stray whitespace or a smart-quoting editor would deform the art.
+    assert set(SOCRATES_BANNER) - {"\n"} <= BANNER_CHARSET
+    assert all(line == line.rstrip() for line in lines)
+    assert not SOCRATES_BANNER.startswith("\n")
+    assert not SOCRATES_BANNER.endswith("\n")
+
+    digest = hashlib.sha256(SOCRATES_BANNER.encode()).hexdigest()
+    assert digest == BANNER_SHA256, "banner art changed — update it deliberately"
+
+
 def test_opening_leads_with_banner_then_informal_greeting():
     need = "A tool that tells me which of my cron jobs actually still matter."
     agent = create_socrates_session(model=_scripted_model())
@@ -70,9 +94,8 @@ def test_opening_leads_with_banner_then_informal_greeting():
     payload = opening["__interrupt__"][0].value
     assert payload["kind"] == "opening"
 
-    # The art arrives intact, and it is what the Opening leads with.
+    # The art survives the round trip through the graph, and leads the Opening.
     assert payload["banner"] == SOCRATES_BANNER
-    assert len(SOCRATES_BANNER.splitlines()) == 21
     display = payload["display"]
     assert display == render_opening()
     assert display.startswith(SOCRATES_BANNER)
