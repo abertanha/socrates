@@ -40,10 +40,10 @@ INTERNAL_LEAKS = (
 
 # The art is fixed: it must render exactly as the piece the user prepared.
 # Changing the banner is a deliberate act — update this fingerprint with it.
-BANNER_SHA256 = "051fee8735fe7e085c85f096702a96b2e20cf83e1ae2e07769f8c7cbe71b4d8b"
-BANNER_ROWS = 21
-BANNER_WIDTH = 196
-BANNER_CHARSET = set(" /:\\_|~")
+BANNER_SHA256 = "f1267661e985c857f550fa19f7ecc45ce7e9974d4dfdb7ab26e2b3c6b618e1dd"
+BANNER_ROWS = 6
+BANNER_WIDTH = 79
+BANNER_CHARSET = set(" $/\\_|")
 
 
 def _thread_config() -> dict:
