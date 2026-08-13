@@ -14,7 +14,6 @@ from socrates.deliverable import DeliverableComposer, is_affirmative_satisfactio
 from socrates.opening import (
     OPENING_GREETING,
     OPENING_QUESTION,
-    SOCRATES_BANNER,
     render_opening,
 )
 from socrates.paths import NEED_PATH
@@ -79,7 +78,6 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             interrupt(
                 {
                     "kind": "opening",
-                    "banner": SOCRATES_BANNER,
                     "greeting": OPENING_GREETING,
                     "question": OPENING_QUESTION,
                     "display": render_opening(),

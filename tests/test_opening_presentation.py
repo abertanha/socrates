@@ -1,14 +1,13 @@
 """Orchestration test for the Opening presentation.
 
 Seam: session orchestration with the model provider stubbed.
-Asserts the banner is the first thing a new session puts in front of the user,
-that the greeting invites the developer informally, and that none of the
-harness's internals reach what the user reads.
+Asserts the greeting invites the developer informally and that the
+greeting precedes the question that hands the floor over, and that none of
+the harness's internals reach what the user reads.
 """
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 
 from deepagents.backends import StateBackend
@@ -19,7 +18,6 @@ from socrates import StubChatModel, create_socrates_session
 from socrates.opening import (
     OPENING_GREETING,
     OPENING_QUESTION,
-    SOCRATES_BANNER,
     render_opening,
 )
 from socrates.paths import NEED_PATH
@@ -36,14 +34,6 @@ INTERNAL_LEAKS = (
     "deepagents",
     "virtual filesystem",
 )
-
-
-# The art is fixed: it must render exactly as the piece the user prepared.
-# Changing the banner is a deliberate act — update this fingerprint with it.
-BANNER_SHA256 = "f1267661e985c857f550fa19f7ecc45ce7e9974d4dfdb7ab26e2b3c6b618e1dd"
-BANNER_ROWS = 6
-BANNER_WIDTH = 79
-BANNER_CHARSET = set(" $/\\_|")
 
 
 def _thread_config() -> dict:
@@ -67,22 +57,7 @@ def _scripted_model() -> StubChatModel:
     )
 
 
-def test_banner_art_renders_exactly_as_prepared():
-    lines = SOCRATES_BANNER.splitlines()
-    assert len(lines) == BANNER_ROWS
-    assert max(len(line) for line in lines) == BANNER_WIDTH
-
-    # Stray whitespace or a smart-quoting editor would deform the art.
-    assert set(SOCRATES_BANNER) - {"\n"} <= BANNER_CHARSET
-    assert all(line == line.rstrip() for line in lines)
-    assert not SOCRATES_BANNER.startswith("\n")
-    assert not SOCRATES_BANNER.endswith("\n")
-
-    digest = hashlib.sha256(SOCRATES_BANNER.encode()).hexdigest()
-    assert digest == BANNER_SHA256, "banner art changed — update it deliberately"
-
-
-def test_opening_leads_with_banner_then_informal_greeting():
+def test_opening_presents_greeting_then_question():
     need = "A tool that tells me which of my cron jobs actually still matter."
     agent = create_socrates_session(model=_scripted_model())
     config = _thread_config()
@@ -94,13 +69,10 @@ def test_opening_leads_with_banner_then_informal_greeting():
     payload = opening["__interrupt__"][0].value
     assert payload["kind"] == "opening"
 
-    # The art survives the round trip through the graph, and leads the Opening.
-    assert payload["banner"] == SOCRATES_BANNER
+    # The Opening survives the round trip through the graph: greeting first,
+    # then the question that hands the floor over.
     display = payload["display"]
     assert display == render_opening()
-    assert display.startswith(SOCRATES_BANNER)
-
-    # Banner, then greeting, then the question that hands the floor over.
     assert display.index(OPENING_GREETING) < display.index(OPENING_QUESTION)
     assert payload["greeting"] == OPENING_GREETING
     assert payload["question"] == OPENING_QUESTION
