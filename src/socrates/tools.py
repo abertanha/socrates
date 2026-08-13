@@ -11,15 +11,20 @@ from langchain.tools import tool
 from langgraph.types import interrupt
 
 from socrates.deliverable import DeliverableComposer, is_affirmative_satisfaction
+from socrates.opening import (
+    OPENING_GREETING,
+    OPENING_QUESTION,
+    SOCRATES_BANNER,
+    render_opening,
+)
 from socrates.paths import NEED_PATH
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore
 from socrates.inference import InferenceEngine
 from socrates.coverage import CoverageStore
 
-OPENING_QUESTION = "What Need should this Model serve?"
 SATISFACTION_QUESTION = (
-    "Do you signal Satisfaction with the Model as it stands?"
+    "Does this feel right to you as it stands, or is there more to work through?"
 )
 
 ACTIVITY_PROMPTS: dict[ModelingActivity, str] = {
@@ -65,12 +70,19 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
     @tool
     def run_opening() -> str:
-        """Opening: elicit the Need from the user and persist it as the Model's first content."""
+        """Open the session: show the banner and greeting, then ask what the user is building.
+
+        Call this before writing any prose of your own — it is the first thing
+        the user sees, and it already does the greeting for you.
+        """
         need = str(
             interrupt(
                 {
                     "kind": "opening",
+                    "banner": SOCRATES_BANNER,
+                    "greeting": OPENING_GREETING,
                     "question": OPENING_QUESTION,
+                    "display": render_opening(),
                 }
             )
         )
@@ -79,13 +91,13 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
     @tool
     def await_satisfaction() -> str:
-        """Ask whether the user signals Satisfaction; blocks until they answer.
+        """Ask the user, in plain words, whether the Model is right as it stands.
 
-        Surfaces a non-blocking, criticality-weighted warning when deferred
-        Conflicts remain open — Satisfaction is never hard-blocked (ADR-0002).
-        On affirmative Satisfaction, materializes the Conceptual Domain Model
-        as Glossary + Structure + Rules under /model/deliverable/.
+        Surfaces a non-blocking warning when deferred Conflicts remain open. On
+        an affirmative answer, materializes the Conceptual Domain Model as
+        Glossary + Structure + Rules under /model/deliverable/.
         """
+        # Warning only — Satisfaction is never hard-blocked (ADR-0002).
         warning = inference.satisfaction_warning()
         answer = str(
             interrupt(
@@ -262,9 +274,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         """Set this pass's recursion_limit from Coverage (∝ 1/Coverage).
 
         Coverage rises as Conflicts-per-pass decline. The budget is an
-        exploration allowance only — never a quality gate (ADR-0002/0004).
-        Subagents receive the same limit (deepagents #1698).
+        exploration allowance only — never a quality gate. Subagents receive
+        the same limit.
         """
+        # Allowance, not a grader (ADR-0002/0004); propagation guards #1698.
         try:
             budget = coverage.select_budget()
         except ValueError as exc:
