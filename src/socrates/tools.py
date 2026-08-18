@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from typing import Any
 
 from deepagents.backends.protocol import BackendProtocol
 from langchain_core.tools import BaseTool, StructuredTool
@@ -58,6 +59,38 @@ def _proposition_payload(prop) -> dict:
         "flagged_against_id": prop.flagged_against_id,
         "accepted_via": prop.accepted_via,
     }
+
+
+_CONFIRMED_ANSWERS = frozenset(
+    {"yes", "y", "confirm", "confirmed", "ok", "true", "accept", "reject"}
+)
+
+
+def _is_confirmed(answer: Any) -> bool:
+    """Whether the interrupt resume confirms the action.
+
+    English-only for now (bilingual support is deferred until after the
+    first real-model testing pass).
+    """
+    if answer is True:
+        return True
+    if not isinstance(answer, str):
+        return False
+    normalized = " ".join(answer.strip().casefold().split())
+    return normalized in _CONFIRMED_ANSWERS or normalized.startswith("yes")
+
+
+def _declined(action: str, proposition_id: str, status: str) -> str:
+    return json.dumps(
+        {
+            "ok": False,
+            "declined": True,
+            "proposition_id": proposition_id,
+            "status": status,
+            "error": f"User declined {action}; Proposition {proposition_id} "
+            f"remains {status}",
+        }
+    )
 
 
 def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
@@ -137,7 +170,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
         Optional via_proposition_id marks indirect Acceptance (foundation for cascades).
         """
-        interrupt(
+        answer = interrupt(
             {
                 "kind": "accept",
                 "proposition_id": proposition_id,
@@ -147,6 +180,12 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
                 ),
             }
         )
+        if not _is_confirmed(answer):
+            try:
+                status = store.get(proposition_id).status
+            except ValueError:
+                status = "unknown"
+            return _declined("Acceptance", proposition_id, status)
         try:
             prop = store.accept(
                 proposition_id,
@@ -163,7 +202,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     @tool
     def reject_proposition(proposition_id: str, reason: str) -> str:
         """Reject a Proposition with an explicit reason; records it in the Rejection Guardrail."""
-        interrupt(
+        answer = interrupt(
             {
                 "kind": "reject",
                 "proposition_id": proposition_id,
@@ -173,6 +212,12 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
                 ),
             }
         )
+        if not _is_confirmed(answer):
+            try:
+                status = store.get(proposition_id).status
+            except ValueError:
+                status = "unknown"
+            return _declined("Rejection", proposition_id, status)
         try:
             prop = store.reject(proposition_id, reason)
         except (ValueError, KeyError) as exc:
@@ -185,7 +230,11 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
     @tool
     def reconcile(findings_json: str) -> str:
-        """From pass 2, surface latent L2/L3 Conflicts before Scenarios / Assertion Tests."""
+        """From pass 2, surface latent L2/L3 Conflicts before Scenarios / Assertion Tests.
+
+        An empty findings array is valid — it records that Reconciliation ran
+        and surfaced nothing. Never fabricate findings to satisfy the gate.
+        """
         try:
             findings = json.loads(findings_json)
             if not isinstance(findings, list):
@@ -318,7 +367,7 @@ def build_activity_tools(
         proposition_id: str,
         via_proposition_id: str = "",
     ) -> str:
-        interrupt(
+        answer = interrupt(
             {
                 "kind": "accept",
                 "proposition_id": proposition_id,
@@ -328,6 +377,12 @@ def build_activity_tools(
                 ),
             }
         )
+        if not _is_confirmed(answer):
+            try:
+                status = store.get(proposition_id).status
+            except ValueError:
+                status = "unknown"
+            return _declined("Acceptance", proposition_id, status)
         try:
             prop = store.accept(
                 proposition_id,
@@ -338,7 +393,7 @@ def build_activity_tools(
         return json.dumps(_proposition_payload(prop))
 
     def reject_proposition(proposition_id: str, reason: str) -> str:
-        interrupt(
+        answer = interrupt(
             {
                 "kind": "reject",
                 "proposition_id": proposition_id,
@@ -348,6 +403,12 @@ def build_activity_tools(
                 ),
             }
         )
+        if not _is_confirmed(answer):
+            try:
+                status = store.get(proposition_id).status
+            except ValueError:
+                status = "unknown"
+            return _declined("Rejection", proposition_id, status)
         try:
             prop = store.reject(proposition_id, reason)
         except (ValueError, KeyError) as exc:

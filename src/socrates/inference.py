@@ -20,6 +20,8 @@ from socrates.paths import (
     CONFLICTS_PATH,
     INFERENCE_STATE_PATH,
     NEED_PATH,
+    NOTIFICATIONS_PATH,
+    PROPOSITIONS_PATH,
     SCENARIOS_PATH,
 )
 from socrates.coverage import CoverageStore
@@ -151,16 +153,25 @@ class InferenceEngine:
         return probed + 1
 
     def reconcile(self, findings: list[dict[str, Any]]) -> list[Conflict]:
-        """Surface latent L2/L3 conflicts from the latest ingest (pass 2+ only)."""
+        """Surface latent L2/L3 conflicts from the latest ingest (pass 2+ only).
+
+        An empty run is a valid outcome, not an error: it records that
+        Reconciliation ran and surfaced nothing, which satisfies the
+        pre-Scenario gate for the pass — findings are never fabricated.
+        """
         pass_no = self.current_pass()
         if pass_no < 2:
             raise ValueError("Reconciliation applies from pass 2 onward")
-        if not findings:
-            raise ValueError("Reconciliation requires at least one finding")
 
         state = self._load_inference_state()
         if state.get("reconciliation_pass") == pass_no:
             raise ValueError(f"Reconciliation already completed for pass {pass_no}")
+
+        if not findings:
+            state["reconciliation_pass"] = pass_no
+            state.setdefault("blocked_proposition_ids", [])
+            self._save_inference_state(state)
+            return []
 
         surfaced: list[Conflict] = []
         conflicts = self._load_conflicts()
@@ -373,7 +384,13 @@ class InferenceEngine:
         return surfaced
 
     def probe_batch(self) -> dict[str, Any]:
-        """Gather open L1–L3 Conflicts into a Batch; L4 is Iteration, not Probe."""
+        """Gather open L1–L3 Conflicts into a Batch; L4 is Iteration, not Probe.
+
+        Application is transactional: a malformed resume rolls the Model back
+        to the pre-Batch state (snapshot taken before the Batch is created),
+        so calling ``probe_batch`` again simply re-presents the same Batch
+        instead of stranding it half-applied.
+        """
         conflicts = self._load_conflicts()
         open_conflicts = [
             c
@@ -386,6 +403,7 @@ class InferenceEngine:
                 "L4 Conflicts require Iteration via run_iteration"
             )
 
+        snapshot = self._snapshot_state()
         batches = self._load_batches()
         batch = Batch(
             id=f"b{len(batches) + 1}",
@@ -407,7 +425,11 @@ class InferenceEngine:
                 ],
             }
         )
-        applied = self._apply_resolutions(batch.id, resolutions)
+        try:
+            applied = self._apply_resolutions(batch.id, resolutions)
+        except ValueError:
+            self._restore_state(snapshot)
+            raise
         return {
             "batch_id": batch.id,
             "conflict_ids": batch.conflict_ids,
@@ -498,6 +520,10 @@ class InferenceEngine:
         conflict.batch_id = None
         conflict.resolution = {"action": "defer", "criticality": criticality}
         self._save_conflicts(conflicts)
+        # Deferral never blocks the current pass (CONTEXT) — standalone or
+        # in-Batch, deferring unblocks the quarantined new Proposition.
+        if conflict.source == "reconciliation":
+            self._unblock_propositions({conflict.proposition_id})
         return {
             "conflict_id": conflict.id,
             "status": "deferred",
@@ -570,6 +596,8 @@ class InferenceEngine:
         unblocked: set[str] = set()
 
         for raw in items:
+            if not isinstance(raw, dict):
+                raise ValueError("Each resolution must be an object")
             conflict_id = raw.get("conflict_id")
             action = raw.get("action")
             if conflict_id not in batch_conflict_ids:
@@ -674,6 +702,10 @@ class InferenceEngine:
                     }
                 )
                 resolved_ids.add(conflict_id)
+                # Deferral never blocks the current pass (CONTEXT): unblock
+                # the new Proposition the finding had quarantined.
+                if conflict.source == "reconciliation":
+                    unblocked.add(conflict.proposition_id)
                 continue
             else:
                 raise ValueError(
@@ -700,12 +732,47 @@ class InferenceEngine:
         self._save_conflicts(conflicts)
 
         if unblocked:
-            state = self._load_inference_state()
-            blocked = set(state.get("blocked_proposition_ids", [])) - unblocked
-            state["blocked_proposition_ids"] = sorted(blocked)
-            self._save_inference_state(state)
+            self._unblock_propositions(unblocked)
 
         return applied
+
+    # Every file a Probe application may mutate — snapshotted so a
+    # malformed resume rolls back atomically (see probe_batch).
+    _STATE_PATHS = (
+        PROPOSITIONS_PATH,
+        CONFLICTS_PATH,
+        BATCHES_PATH,
+        INFERENCE_STATE_PATH,
+        NOTIFICATIONS_PATH,
+    )
+
+    def _snapshot_state(self) -> dict[str, str | None]:
+        """Raw pre-Batch contents; ``None`` marks an absent file."""
+        snapshot: dict[str, str | None] = {}
+        for path in self._STATE_PATHS:
+            result = self._backend.read(path)
+            snapshot[path] = (
+                None
+                if result.error or result.file_data is None
+                else result.file_data["content"]
+            )
+        return snapshot
+
+    def _restore_state(self, snapshot: dict[str, str | None]) -> None:
+        for path, content in snapshot.items():
+            if content is None:
+                self._backend.delete(path)
+            else:
+                self._backend.write(path, content)
+
+    def _unblock_propositions(self, proposition_ids: set[str]) -> None:
+        """Drop ids from the Reconciliation block so Scenarios may proceed."""
+        if not proposition_ids:
+            return
+        state = self._load_inference_state()
+        blocked = set(state.get("blocked_proposition_ids", [])) - proposition_ids
+        state["blocked_proposition_ids"] = sorted(blocked)
+        self._save_inference_state(state)
 
     def _require_reconciliation_before_scenarios(self) -> None:
         pass_no = self.current_pass()

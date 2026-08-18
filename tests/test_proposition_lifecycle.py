@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from socrates import StubChatModel, create_socrates_session
@@ -132,3 +132,75 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
             "reason": rejection_reason,
         }
     ]
+
+
+def test_accept_and_reject_interrupts_honor_a_declined_answer():
+    """The confirmation interrupt is a gate, not a rubber stamp: a declined
+    answer leaves the Proposition untouched (post-MVP fix)."""
+    need = "Marketplace checkout payments domain."
+    p1 = "A Payment belongs to exactly one Order."
+    p2 = "Cash is the only allowed tender."
+
+    model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "c-open"),
+            _tool_call(
+                "propose_proposition",
+                {"statement": p1, "activity": "requirements"},
+                "c-propose-1",
+            ),
+            # Declined, then confirmed on retry.
+            _tool_call("accept_proposition", {"proposition_id": "p1"}, "c-accept-1"),
+            _tool_call("accept_proposition", {"proposition_id": "p1"}, "c-accept-1b"),
+            _tool_call(
+                "propose_proposition",
+                {"statement": p2, "activity": "requirements"},
+                "c-propose-2",
+            ),
+            # Rejection declined — the Proposition stays a Candidate.
+            _tool_call(
+                "reject_proposition",
+                {"proposition_id": "p2", "reason": "Out of scope."},
+                "c-reject-2",
+            ),
+            AIMessage(content="Lifecycle pass complete."),
+        ]
+    )
+    agent = create_socrates_session(model=model)
+    config = _thread_config()
+
+    agent.invoke(
+        {"messages": [HumanMessage(content="Start a modeling session.")]},
+        config=config,
+    )
+    r = agent.invoke(Command(resume=need), config=config)
+    assert r["__interrupt__"][0].value["kind"] == "accept"
+    assert r["__interrupt__"][0].value["proposition_id"] == "p1"
+
+    declined = agent.invoke(Command(resume="no, hold on"), config=config)
+    # Declined: NOT accepted, and the tool result says so.
+    assert _by_id(declined["files"])["p1"]["status"] == "candidate"
+    declined_msgs = [
+        m
+        for m in declined["messages"]
+        if isinstance(m, ToolMessage)
+        and isinstance(m.content, str)
+        and '"ok":false' in m.content.replace(" ", "")
+        and "declined" in m.content
+    ]
+    assert declined_msgs
+    # The agent re-asked; the user now confirms.
+    assert declined["__interrupt__"][0].value["kind"] == "accept"
+
+    r = agent.invoke(Command(resume="yes"), config=config)
+    assert _by_id(r["files"])["p1"]["status"] == "accepted"
+    assert r["__interrupt__"][0].value["kind"] == "reject"
+    assert r["__interrupt__"][0].value["proposition_id"] == "p2"
+
+    finished = agent.invoke(Command(resume="no"), config=config)
+    assert finished.get("__interrupt__") is None
+    assert agent.get_state(config).next == ()
+    # Declined rejection: still a Candidate, Guardrail untouched.
+    by_id = _by_id(finished["files"])
+    assert by_id["p2"]["status"] == "candidate"
+    assert REJECTION_GUARDRAIL_PATH not in finished["files"]
