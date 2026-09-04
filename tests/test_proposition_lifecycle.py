@@ -204,3 +204,72 @@ def test_accept_and_reject_interrupts_honor_a_declined_answer():
     by_id = _by_id(finished["files"])
     assert by_id["p2"]["status"] == "candidate"
     assert REJECTION_GUARDRAIL_PATH not in finished["files"]
+
+
+def test_cross_polarity_answer_never_confirms_the_opposite_action():
+    """"reject" at an Accept interrupt declines the Acceptance, and "accept"
+    at a Reject interrupt declines the Rejection — the affirmative answer
+    set is contextual to the action's polarity, never shared."""
+    need = "Marketplace checkout payments domain."
+    p1 = "A Payment belongs to exactly one Order."
+    p2 = "Cash is the only allowed tender."
+
+    model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "c-open"),
+            _tool_call(
+                "propose_proposition",
+                {"statement": p1, "activity": "requirements"},
+                "c-propose-1",
+            ),
+            _tool_call("accept_proposition", {"proposition_id": "p1"}, "c-accept-1"),
+            # The cross-polarity word declined it; the agent re-asks.
+            _tool_call("accept_proposition", {"proposition_id": "p1"}, "c-accept-1b"),
+            _tool_call(
+                "propose_proposition",
+                {"statement": p2, "activity": "requirements"},
+                "c-propose-2",
+            ),
+            _tool_call(
+                "reject_proposition",
+                {"proposition_id": "p2", "reason": "Out of scope."},
+                "c-reject-2",
+            ),
+            AIMessage(content="Cross-polarity pass complete."),
+        ]
+    )
+    agent = create_socrates_session(model=model)
+    config = _thread_config()
+
+    agent.invoke(
+        {"messages": [HumanMessage(content="Start a modeling session.")]},
+        config=config,
+    )
+    r = agent.invoke(Command(resume=need), config=config)
+    assert r["__interrupt__"][0].value["kind"] == "accept"
+
+    # "reject" means "no, don't accept" — it must NOT confirm Acceptance.
+    declined = agent.invoke(Command(resume="reject"), config=config)
+    assert _by_id(declined["files"])["p1"]["status"] == "candidate"
+    declined_msgs = [
+        m
+        for m in declined["messages"]
+        if isinstance(m, ToolMessage)
+        and isinstance(m.content, str)
+        and '"ok":false' in m.content.replace(" ", "")
+        and "declined" in m.content
+    ]
+    assert declined_msgs
+    assert declined["__interrupt__"][0].value["kind"] == "accept"
+
+    r = agent.invoke(Command(resume="yes"), config=config)
+    assert _by_id(r["files"])["p1"]["status"] == "accepted"
+    assert r["__interrupt__"][0].value["kind"] == "reject"
+
+    # "accept" means "no, keep it" — it must NOT confirm Rejection.
+    finished = agent.invoke(Command(resume="accept"), config=config)
+    assert finished.get("__interrupt__") is None
+    assert agent.get_state(config).next == ()
+    by_id = _by_id(finished["files"])
+    assert by_id["p2"]["status"] == "candidate"
+    assert REJECTION_GUARDRAIL_PATH not in finished["files"]

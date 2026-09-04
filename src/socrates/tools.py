@@ -61,23 +61,35 @@ def _proposition_payload(prop) -> dict:
     }
 
 
-_CONFIRMED_ANSWERS = frozenset(
-    {"yes", "y", "confirm", "confirmed", "ok", "true", "accept", "reject"}
+_GENERIC_CONFIRMS = frozenset(
+    {"yes", "y", "confirm", "confirmed", "ok", "true"}
 )
 
+# Polarity-specific affirmations confirm only their own action; the
+# opposite word declines it, leaving the Proposition's status preserved.
+_ACTION_CONFIRMS: dict[str, frozenset[str]] = {
+    "accept": _GENERIC_CONFIRMS | {"accept", "accepted"},
+    "reject": _GENERIC_CONFIRMS | {"reject", "rejected"},
+}
 
-def _is_confirmed(answer: Any) -> bool:
-    """Whether the interrupt resume confirms the action.
 
-    English-only for now (bilingual support is deferred until after the
-    first real-model testing pass).
+def _is_confirmed(answer: Any, action: str) -> bool:
+    """Whether the interrupt resume confirms ``action``.
+
+    Affirmations are contextual to the action's polarity: "reject" never
+    confirms an Acceptance (and "accept" never confirms a Rejection) — the
+    cross-polarity word declines the action instead. English-only for now
+    (bilingual support is deferred until after the first real-model
+    testing pass).
     """
     if answer is True:
         return True
     if not isinstance(answer, str):
         return False
     normalized = " ".join(answer.strip().casefold().split())
-    return normalized in _CONFIRMED_ANSWERS or normalized.startswith("yes")
+    if normalized.startswith("yes"):
+        return True
+    return normalized in _ACTION_CONFIRMS.get(action, _GENERIC_CONFIRMS)
 
 
 def _declined(action: str, proposition_id: str, status: str) -> str:
@@ -180,7 +192,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
                 ),
             }
         )
-        if not _is_confirmed(answer):
+        if not _is_confirmed(answer, "accept"):
             try:
                 status = store.get(proposition_id).status
             except ValueError:
@@ -212,7 +224,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
                 ),
             }
         )
-        if not _is_confirmed(answer):
+        if not _is_confirmed(answer, "reject"):
             try:
                 status = store.get(proposition_id).status
             except ValueError:
@@ -377,7 +389,7 @@ def build_activity_tools(
                 ),
             }
         )
-        if not _is_confirmed(answer):
+        if not _is_confirmed(answer, "accept"):
             try:
                 status = store.get(proposition_id).status
             except ValueError:
@@ -403,7 +415,7 @@ def build_activity_tools(
                 ),
             }
         )
-        if not _is_confirmed(answer):
+        if not _is_confirmed(answer, "reject"):
             try:
                 status = store.get(proposition_id).status
             except ValueError:
