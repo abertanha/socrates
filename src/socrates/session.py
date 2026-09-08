@@ -23,6 +23,7 @@ from socrates.coverage import (
     RECURSION_LIMIT_GENEROUS,
     BudgetAwareSubagent,
 )
+from socrates.conduction import ConductionMiddleware
 from socrates.model import ModelProvider
 from socrates.pipeline import (
     ACTIVITIES_IN_ORDER,
@@ -160,6 +161,7 @@ def create_socrates_session(
         model=model,
         tools=list(build_session_tools(fs)),
         system_prompt=SYSTEM_PROMPT,
+        middleware=[ConductionMiddleware(fs)],
         backend=fs,
         checkpointer=saver,
         subagents=_build_activity_subagents(fs, model, activity_models),
