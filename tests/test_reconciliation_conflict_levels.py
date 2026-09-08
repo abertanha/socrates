@@ -1,9 +1,11 @@
 """Orchestration test for ticket 05 — Reconciliation + Conflict Levels.
 
-Seam: session orchestration with the model provider stubbed.
-Covers pass-2 Reconciliation (L2/L3 only) before Assertion Tests, L1–L4
-classification, L4 only from intersection Assertion Tests on two Accepted
-Propositions, and Scenario skip for Reconciliation-contradicted material.
+Seam: session orchestration with the model provider stubbed (ticket 14
+shape: the three chapters run first via `task`, so the Reconciliation saga
+lives in the tail, where the orchestrator keeps the pulse). Covers pass-2
+Reconciliation (L2/L3 only) before Assertion Tests, L1–L4 classification,
+L4 only from intersection Assertion Tests on two Accepted Propositions, and
+Scenario skip for Reconciliation-contradicted material.
 """
 
 from __future__ import annotations
@@ -55,6 +57,41 @@ def _two_scenarios(prefix: str) -> list[dict]:
     ]
 
 
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
+    return StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+            AIMessage(content=f"{label} activity complete."),
+        ],
+        label=label,
+    )
+
+
+def _three_chapter_walk() -> list[AIMessage]:
+    """Walk the three chapters so the orchestrator reaches the tail."""
+    return [
+        _tool_call(
+            "task",
+            {"subagent_type": "requirements", "description": "Run Requirements."},
+            "task-req",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "domain-modeling", "description": "Run Structure."},
+            "task-dom",
+        ),
+        _tool_call(
+            "task",
+            {
+                "subagent_type": "behavioral-specification",
+                "description": "Run Rules.",
+            },
+            "task-beh",
+        ),
+    ]
+
+
 def test_reconciliation_levels_and_scenario_skip():
     need = "Marketplace checkout payments domain."
     p1 = "A Payment belongs to exactly one Order."
@@ -68,6 +105,7 @@ def test_reconciliation_levels_and_scenario_skip():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
+            *_three_chapter_walk(),
             _tool_call(
                 "propose_proposition",
                 {"statement": p1, "activity": "domain_modeling"},
@@ -225,7 +263,14 @@ def test_reconciliation_levels_and_scenario_skip():
             AIMessage(content="Reconciliation pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(
+        model=model,
+        activity_models={
+            "requirements": _chapter_close_stub("req"),
+            "domain_modeling": _chapter_close_stub("dom"),
+            "behavioral_specification": _chapter_close_stub("beh"),
+        },
+    )
     config = _thread_config()
 
     opening = agent.invoke(

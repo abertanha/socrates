@@ -1,9 +1,11 @@
 """Orchestration test for ticket 04 — Probe loop.
 
-Seam: session orchestration with the model provider stubbed.
-Covers Need-relevant Scenarios (several per Proposition), Assertion Tests
-surfacing Conflicts, Batch presentation, and interrupt-gated Probe resolution
-that updates the Model.
+Seam: session orchestration with the model provider stubbed (ticket 14
+shape: the three chapters run first via `task`, so the Probe saga lives in
+the tail, where the orchestrator keeps the pulse). Covers Need-relevant
+Scenarios (several per Proposition), Assertion Tests surfacing Conflicts,
+Batch presentation, and interrupt-gated Probe resolution that updates the
+Model.
 """
 
 from __future__ import annotations
@@ -45,6 +47,41 @@ def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
 
 def _load_json(files: dict, path: str) -> dict:
     return json.loads(files[path]["content"])
+
+
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
+    return StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+            AIMessage(content=f"{label} activity complete."),
+        ],
+        label=label,
+    )
+
+
+def _three_chapter_walk() -> list[AIMessage]:
+    """Walk the three chapters so the orchestrator reaches the tail."""
+    return [
+        _tool_call(
+            "task",
+            {"subagent_type": "requirements", "description": "Run Requirements."},
+            "task-req",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "domain-modeling", "description": "Run Structure."},
+            "task-dom",
+        ),
+        _tool_call(
+            "task",
+            {
+                "subagent_type": "behavioral-specification",
+                "description": "Run Rules.",
+            },
+            "task-beh",
+        ),
+    ]
 
 
 def test_probe_loop_scenarios_assertion_batch_and_model_update():
@@ -99,6 +136,7 @@ def test_probe_loop_scenarios_assertion_batch_and_model_update():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
+            *_three_chapter_walk(),
             _tool_call(
                 "propose_proposition",
                 {"statement": p1_statement, "activity": "domain_modeling"},
@@ -176,7 +214,14 @@ def test_probe_loop_scenarios_assertion_batch_and_model_update():
             AIMessage(content="Probe pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(
+        model=model,
+        activity_models={
+            "requirements": _chapter_close_stub("req"),
+            "domain_modeling": _chapter_close_stub("dom"),
+            "behavioral_specification": _chapter_close_stub("beh"),
+        },
+    )
     config = _thread_config()
 
     opening = agent.invoke(

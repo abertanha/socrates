@@ -1,9 +1,11 @@
 """Orchestration test for ticket 10 — Notification policy (quiet by default).
 
-Seam: session orchestration with the model provider stubbed.
-Covers: routine Probe/Interview produce no Notification; unavoidable
-(non-deferrable, blocks progress) Conflicts notify; Supersede cascade notifies;
-delivery channels are stubbed behind the Notification boundary.
+Seam: session orchestration with the model provider stubbed (ticket 14
+shape: the three chapters run first via `task`, so the Conflicts saga lives
+in the tail, where the orchestrator keeps the pulse). Covers: routine
+Probe/Interview produce no Notification; unavoidable (non-deferrable,
+blocks progress) Conflicts notify; Supersede cascade notifies; delivery
+channels are stubbed behind the Notification boundary.
 """
 
 from __future__ import annotations
@@ -56,6 +58,41 @@ def _two_scenarios(prefix: str) -> list[dict]:
     ]
 
 
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
+    return StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+            AIMessage(content=f"{label} activity complete."),
+        ],
+        label=label,
+    )
+
+
+def _three_chapter_walk() -> list[AIMessage]:
+    """Walk the three chapters so the orchestrator reaches the tail."""
+    return [
+        _tool_call(
+            "task",
+            {"subagent_type": "requirements", "description": "Run Requirements."},
+            "task-req",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "domain-modeling", "description": "Run Structure."},
+            "task-dom",
+        ),
+        _tool_call(
+            "task",
+            {
+                "subagent_type": "behavioral-specification",
+                "description": "Run Rules.",
+            },
+            "task-beh",
+        ),
+    ]
+
+
 def test_notification_policy_quiet_unavoidable_cascade_and_stubbed_channels():
     need = "Marketplace checkout payments domain."
     foundation = "A Payment belongs to exactly one Order."
@@ -68,6 +105,7 @@ def test_notification_policy_quiet_unavoidable_cascade_and_stubbed_channels():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
+            *_three_chapter_walk(),
             _tool_call(
                 "propose_proposition",
                 {"statement": foundation, "activity": "domain_modeling"},
@@ -197,7 +235,14 @@ def test_notification_policy_quiet_unavoidable_cascade_and_stubbed_channels():
             AIMessage(content="Notification policy pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(
+        model=model,
+        activity_models={
+            "requirements": _chapter_close_stub("req"),
+            "domain_modeling": _chapter_close_stub("dom"),
+            "behavioral_specification": _chapter_close_stub("beh"),
+        },
+    )
     config = _thread_config()
 
     opening = agent.invoke(

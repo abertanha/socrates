@@ -56,6 +56,41 @@ def _activity_stub(*, propose_statement: str, label: str) -> StubChatModel:
     )
 
 
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
+    return StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+            AIMessage(content=f"{label} activity complete."),
+        ],
+        label=label,
+    )
+
+
+def _three_chapter_walk() -> list[AIMessage]:
+    """Walk the three chapters so the orchestrator reaches the tail."""
+    return [
+        _tool_call(
+            "task",
+            {"subagent_type": "requirements", "description": "Run Requirements."},
+            "task-req",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "domain-modeling", "description": "Run Structure."},
+            "task-dom",
+        ),
+        _tool_call(
+            "task",
+            {
+                "subagent_type": "behavioral-specification",
+                "description": "Run Rules.",
+            },
+            "task-beh",
+        ),
+    ]
+
+
 def test_l4_iteration_proposes_upstream_confirms_and_reruns():
     need = "Marketplace checkout payments domain."
     req_statement = "Checkout must capture payment authorization."
@@ -300,6 +335,9 @@ def test_l4_iteration_proposes_domain_for_entity_vs_behavior():
                 "prop-p2",
             ),
             _tool_call("accept_proposition", {"proposition_id": "p2"}, "acc-p2"),
+            # Walk the chapters so the Assertion Tests run in the tail,
+            # where the orchestrator keeps the pulse.
+            *_three_chapter_walk(),
             _tool_call(
                 "record_scenarios",
                 {
@@ -344,7 +382,14 @@ def test_l4_iteration_proposes_domain_for_entity_vs_behavior():
             AIMessage(content="done"),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(
+        model=model,
+        activity_models={
+            "requirements": _chapter_close_stub("req"),
+            "domain_modeling": _chapter_close_stub("dom"),
+            "behavioral_specification": _chapter_close_stub("beh"),
+        },
+    )
     config = _thread_config()
 
     opening = agent.invoke(

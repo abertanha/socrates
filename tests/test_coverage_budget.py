@@ -1,9 +1,11 @@
 """Orchestration test for ticket 09 — Coverage-driven exploration budget.
 
-Seam: session orchestration with the model provider stubbed.
-Covers pass-over-pass Coverage from declining Conflict signals, recursion_limit
-∝ 1/Coverage, explicit subagent propagation (not silent 25 — #1698), and that
-the budget is an exploration allowance not a quality gate.
+Seam: session orchestration with the model provider stubbed (ticket 14
+shape: the whole pass/Probe pulse runs inside the Domain Modeling chapter
+specialist). Covers pass-over-pass Coverage from declining Conflict signals,
+recursion_limit ∝ 1/Coverage, explicit subagent propagation (not silent 25
+— #1698), and that the budget is an exploration allowance not a quality
+gate.
 """
 
 from __future__ import annotations
@@ -61,14 +63,10 @@ def _two_scenarios(prefix: str) -> list[dict]:
     ]
 
 
-def _activity_stub(*, propose_statement: str, label: str) -> StubChatModel:
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
     return StubChatModel(
         responses=[
-            _tool_call(
-                "propose_proposition",
-                {"statement": propose_statement},
-                f"{label}-propose",
-            ),
             _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
             AIMessage(content=f"{label} activity complete."),
         ],
@@ -85,37 +83,21 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     new_vs_accepted = "A Payment may belong to many Orders."
 
     # Sparse pass 1: three Conflicts → low Coverage → generous budget.
-    # Mature pass 2: one Reconciliation Conflict → higher Coverage → leaner budget.
-    # Then spawn a Modeling Activity subagent to prove #1698 propagation.
-    requirements_model = _activity_stub(
-        propose_statement="Checkout must capture payment authorization.",
-        label="req",
-    )
-
-    main_model = StubChatModel(
+    # Mature pass 2: one Reconciliation Conflict → higher Coverage → leaner
+    # budget. The whole pulse runs inside the Domain Modeling specialist;
+    # the final Behavioral spawn proves #1698 propagation of the
+    # chapter-selected limit.
+    domain_model = StubChatModel(
         responses=[
-            _tool_call("run_opening", {}, "open"),
             _tool_call(
                 "propose_proposition",
-                {"statement": foundation, "activity": "domain_modeling"},
+                {"statement": foundation},
                 "prop-found",
             ),
             _tool_call("accept_proposition", {"proposition_id": "p1"}, "acc-found"),
-            _tool_call(
-                "propose_proposition",
-                {"statement": cand_a, "activity": "domain_modeling"},
-                "p2",
-            ),
-            _tool_call(
-                "propose_proposition",
-                {"statement": cand_b, "activity": "domain_modeling"},
-                "p3",
-            ),
-            _tool_call(
-                "propose_proposition",
-                {"statement": cand_c, "activity": "domain_modeling"},
-                "p4",
-            ),
+            _tool_call("propose_proposition", {"statement": cand_a}, "p2"),
+            _tool_call("propose_proposition", {"statement": cand_b}, "p3"),
+            _tool_call("propose_proposition", {"statement": cand_c}, "p4"),
             _tool_call(
                 "record_scenarios",
                 {
@@ -179,11 +161,7 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
             _tool_call("select_exploration_budget", {}, "budget-sparse"),
             _tool_call("probe_batch", {}, "probe-1"),
             # Pass 2: one L2 via Reconciliation only (no Scenarios required).
-            _tool_call(
-                "propose_proposition",
-                {"statement": new_vs_accepted, "activity": "domain_modeling"},
-                "prop-l2",
-            ),
+            _tool_call("propose_proposition", {"statement": new_vs_accepted}, "prop-l2"),
             _tool_call(
                 "reconcile",
                 {
@@ -203,13 +181,32 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
             ),
             _tool_call("select_exploration_budget", {}, "budget-mature"),
             _tool_call("probe_batch", {}, "probe-2"),
+            _tool_call("complete_modeling_activity", {}, "dom-complete"),
+            AIMessage(content="dom activity complete."),
+        ],
+        label="dom",
+    )
+
+    main_model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "open"),
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Run Requirements."},
+                "task-req",
+            ),
+            _tool_call(
+                "task",
+                {"subagent_type": "domain-modeling", "description": "Run Structure."},
+                "task-dom",
+            ),
             _tool_call(
                 "task",
                 {
-                    "subagent_type": "requirements",
-                    "description": "Re-check Need bounds under current budget.",
+                    "subagent_type": "behavioral-specification",
+                    "description": "Run Rules under the current budget.",
                 },
-                "task-req",
+                "task-beh",
             ),
             AIMessage(content="Coverage budget pass complete."),
         ],
@@ -218,7 +215,11 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
 
     agent = create_socrates_session(
         model=main_model,
-        activity_models={"requirements": requirements_model},
+        activity_models={
+            "requirements": _chapter_close_stub("req"),
+            "domain_modeling": domain_model,
+            "behavioral_specification": _chapter_close_stub("beh"),
+        },
     )
     config = _thread_config()
 
@@ -236,19 +237,6 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     probe1 = r["__interrupt__"][0].value
     assert probe1["kind"] == "probe"
     assert len(probe1["conflicts"]) == 3
-    coverage_sparse = _load_json(r["files"], COVERAGE_PATH)
-    assert coverage_sparse["conflicts_per_pass"]["1"] == 3
-    assert coverage_sparse["coverage"] == measure_coverage(
-        coverage_sparse["conflicts_per_pass"]
-    )
-    assert coverage_sparse["coverage"] == 0.0  # latest == peak
-    sparse_limit = coverage_sparse["recursion_limit"]
-    assert sparse_limit == recursion_limit_for(0.0)
-    assert sparse_limit == RECURSION_LIMIT_GENEROUS
-    assert sparse_limit != SILENT_SUBAGENT_FALLBACK
-    assert coverage_sparse["quality_gate"] is False
-    assert coverage_sparse["role"] == "exploration_allowance"
-    assert coverage_sparse["relevance_anchored"] is True
 
     r = agent.invoke(
         Command(
@@ -266,18 +254,6 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     assert probe2["kind"] == "probe"
     assert len(probe2["conflicts"]) == 1
     assert probe2["conflicts"][0]["level"] == "L2"
-    coverage_mature = _load_json(r["files"], COVERAGE_PATH)
-    assert coverage_mature["conflicts_per_pass"]["1"] == 3
-    assert coverage_mature["conflicts_per_pass"]["2"] == 1
-    expected_coverage = measure_coverage(coverage_mature["conflicts_per_pass"])
-    assert coverage_mature["coverage"] == expected_coverage
-    assert expected_coverage == 1.0 - (1 / 3)
-    mature_limit = coverage_mature["recursion_limit"]
-    assert mature_limit == recursion_limit_for(expected_coverage)
-    # Inverse scaling: fewer Conflicts → higher Coverage → leaner limit.
-    assert mature_limit < sparse_limit
-    assert mature_limit != SILENT_SUBAGENT_FALLBACK
-    assert coverage_mature["quality_gate"] is False
 
     finished = agent.invoke(
         Command(
@@ -295,12 +271,31 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     assert finished.get("__interrupt__") is None
     assert agent.get_state(config).next == ()
 
-    # Subagent received the Coverage-selected limit — not silent 25 (#1698).
+    # The chapter's budget selections surface once the task merges its
+    # filesystem back: sparse pass 1 (3 Conflicts), mature pass 2 (1 L2).
     final_coverage = _load_json(finished["files"], COVERAGE_PATH)
+    assert final_coverage["conflicts_per_pass"] == {"1": 3, "2": 1}
+    expected_coverage = measure_coverage(final_coverage["conflicts_per_pass"])
+    assert final_coverage["coverage"] == expected_coverage
+    assert expected_coverage == 1.0 - (1 / 3)
+    mature_limit = final_coverage["recursion_limit"]
+    assert mature_limit == recursion_limit_for(expected_coverage)
+    # Inverse scaling: fewer Conflicts → higher Coverage → leaner limit.
+    sparse_limit = recursion_limit_for(0.0)
+    assert sparse_limit == RECURSION_LIMIT_GENEROUS
+    assert mature_limit < sparse_limit
+    assert mature_limit != SILENT_SUBAGENT_FALLBACK
+    assert final_coverage["quality_gate"] is False
+    assert final_coverage["role"] == "exploration_allowance"
+    assert final_coverage["relevance_anchored"] is True
+
+    # Subagent received the Coverage-selected limit — not silent 25 (#1698).
+    # The budget was selected inside the Domain Modeling chapter; the
+    # Behavioral spawn that followed carried the mature limit.
     props = final_coverage["subagent_propagations"]
     assert props, "expected BudgetAwareSubagent to record propagation"
     last = props[-1]
-    assert last["subagent"] == "requirements"
+    assert last["subagent"] == "behavioral-specification"
     assert last["recursion_limit"] == mature_limit
     assert last["silent_fallback_avoided"] is True
     assert final_coverage["last_subagent_recursion_limit"] == mature_limit
@@ -310,4 +305,4 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
         for m in finished["messages"]
         if isinstance(m, ToolMessage) and isinstance(m.content, str)
     ]
-    assert any("req activity complete" in t for t in tool_texts)
+    assert any("dom activity complete" in t for t in tool_texts)

@@ -49,33 +49,36 @@ How you talk to the user:
 Session discipline:
 1. Call `run_opening` first, before any prose of your own — it opens with the
    banner and greeting and elicits the Need, then persists it.
-2. Call `select_exploration_budget` at the start of each Inference pass so
-   Coverage (declining Conflict signals) sets the recursion_limit — generous
-   when sparse, lean when mature. The budget is an exploration allowance, not
-   a quality gate. Subagents receive the same limit (no silent fallback to 25).
-3. Run the three Modeling Activities in precedence via the `task` tool:
-   `requirements` → `domain-modeling` → `behavioral-specification`.
-   Each is a specialist subagent with its own posture and tool subset;
-   do not skip or reorder them. Prefer proposing inside the active activity.
-4. On the user's signal, `accept_proposition` or `reject_proposition`
+2. Run the three Modeling Activities in precedence via the `task` tool:
+   `requirements` → `domain-modeling` → `behavioral-specification`. Each
+   specialist runs its own pass/Probe pulse — proposing, lapidating
+   (Scenarios + Assertion Tests), and resolving Conflicts happen inside the
+   chapter. Do not skip or reorder the chapters.
+3. On the user's signal, `accept_proposition` or `reject_proposition`
    (rejection always needs an explicit reason). Indirect Acceptance may pass
    via_proposition_id.
-5. Inference pass: from pass 2 call `reconcile` first (L2/L3 only), then
-   `record_scenarios` → `run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3.
-   Probe routing: L1 in-line; L2 may Supersede (cascade Degrades dependents,
-   user is notified not asked); L3 blocked by Rejection Guardrail (dismiss or
-   defer). Deferrable Conflicts may be deferred (`defer` / `defer_conflict`);
-   the harness recommends against deferring critical ones. L4 is unavoidable
-   (non-deferrable, blocks progress) — Notification outside Interview flow;
-   resolve via `run_iteration`. Quiet by default: routine Probes/Interviews
-   are not Notifications; only unavoidable Conflicts and Supersede cascades.
-6. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
+4. In the tail — once all three Modeling Activities are complete — passes
+   continue over the whole Model until Satisfaction. Each pass: call
+   `select_exploration_budget` first so Coverage (declining Conflict signals)
+   sets the recursion_limit — generous when sparse, lean when mature; it is
+   an exploration allowance, not a quality gate, and subagents receive the
+   same limit (no silent fallback to 25). From pass 2 call `reconcile` first
+   (L2/L3 only), then `record_scenarios` → `run_assertion_tests` (L1/L4) →
+   `probe_batch` for L1–L3. Probe routing: L1 in-line; L2 may Supersede
+   (cascade Degrades dependents, user is notified not asked); L3 blocked by
+   Rejection Guardrail (dismiss or defer). Deferrable Conflicts may be
+   deferred (`defer` / `defer_conflict`); the harness recommends against
+   deferring critical ones. L4 is unavoidable (non-deferrable, blocks
+   progress) — Notification outside Interview flow; resolve via
+   `run_iteration`. Quiet by default: routine Probes/Interviews are not
+   Notifications; only unavoidable Conflicts and Supersede cascades.
+5. Call `await_satisfaction` so the user can signal Satisfaction. Open deferred
    Conflicts appear as a non-blocking, criticality-weighted warning. On
    affirmative Satisfaction the harness materializes the Conceptual Domain
    Model as Glossary, Structure, and Rules under `/model/deliverable/`
    (Implementation-Independence: structure in; technologies and concrete
    parameter values out).
-7. When Satisfaction is recorded, stop. Never declare the Model done yourself.
+6. When Satisfaction is recorded, stop. Never declare the Model done yourself.
 """
 
 _PROFILES_REGISTERED = False

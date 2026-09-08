@@ -27,23 +27,36 @@ SATISFACTION_QUESTION = (
     "Does this feel right to you as it stands, or is there more to work through?"
 )
 
+# The pass/Probe pulse, stated once for every chapter specialist: one
+# regime per chapter — propose, lapidate, resolve under one roof (D1).
+_ACTIVITY_PULSE = (
+    " Run the pass/Probe pulse inside this chapter: call "
+    "`select_exploration_budget` at the start of each pass so Coverage sets "
+    "the exploration allowance — an allowance, never a quality gate; from "
+    "pass 2, `reconcile` first (L2/L3 only — an empty findings array is "
+    "valid, never fabricate findings); then `record_scenarios` → "
+    "`run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3. Deferrable "
+    "Conflicts may be deferred. L4 Conflicts are unavoidable — never defer "
+    "or Probe them; surface them and let the orchestrator carry them to "
+    "Iteration. When the chapter is quiet, call `complete_modeling_activity`."
+)
+
 ACTIVITY_PROMPTS: dict[ModelingActivity, str] = {
     "requirements": (
         "You are the Requirements specialist. Elicit and bound the Need: what "
         "every later Model must include and exclude. Propose Need-scoped "
-        "Propositions only. When finished, call complete_modeling_activity."
+        "Propositions only." + _ACTIVITY_PULSE
     ),
     "domain_modeling": (
         "You are the Domain Modeling specialist. Bound the Subject Domain and "
         "establish ubiquitous language and entities — what the domain is — "
-        "within the Need. Propose structural Propositions only. When finished, "
-        "call complete_modeling_activity."
+        "within the Need. Propose structural Propositions only." + _ACTIVITY_PULSE
     ),
     "behavioral_specification": (
         "You are the Behavioral Specification specialist. Infer conceptual "
         "behavior and relationships between entities as domain rules — what "
         "the domain does. Never propose functional requirements "
-        "('the system shall...'). When finished, call complete_modeling_activity."
+        "('the system shall...')." + _ACTIVITY_PULSE
     ),
 }
 
@@ -106,10 +119,14 @@ def _declined(action: str, proposition_id: str, status: str) -> str:
 
 
 def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
-    """Tools for the main Socrates orchestrator."""
+    """Tools for the main Socrates orchestrator.
+
+    The pass/Probe pulse is composed in too (the tail's passes); the
+    conduction governor admits it on this surface only in the tail and
+    redirects out-of-state attempts into the chapters.
+    """
     store = PropositionStore(backend)
     inference = InferenceEngine(backend)
-    coverage = CoverageStore(backend)
     deliverable = DeliverableComposer(backend)
 
     @tool
@@ -241,6 +258,35 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         return json.dumps(payload)
 
     @tool
+    def run_iteration(conflict_id: str) -> str:
+        """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen activity."""
+        try:
+            result = inference.run_iteration(conflict_id)
+        except (ValueError, KeyError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        return json.dumps({"ok": True, **result})
+
+    return [
+        run_opening,
+        await_satisfaction,
+        propose_proposition,
+        accept_proposition,
+        reject_proposition,
+        run_iteration,
+        *build_pulse_tools(backend),
+    ]
+
+
+def build_pulse_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
+    """The pass/Probe pulse — one regime per chapter, and the tail's passes.
+
+    Shared by the chapter specialists (unconditional) and the main
+    orchestrator, where the conduction governor admits it only in the tail.
+    """
+    inference = InferenceEngine(backend)
+    coverage = CoverageStore(backend)
+
+    @tool
     def reconcile(findings_json: str) -> str:
         """From pass 2, surface latent L2/L3 Conflicts before Scenarios / Assertion Tests.
 
@@ -311,15 +357,6 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         return json.dumps({"ok": True, **result})
 
     @tool
-    def run_iteration(conflict_id: str) -> str:
-        """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen activity."""
-        try:
-            result = inference.run_iteration(conflict_id)
-        except (ValueError, KeyError) as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps({"ok": True, **result})
-
-    @tool
     def defer_conflict(conflict_id: str) -> str:
         """Defer an open Conflict (any level) to resolve later; may re-raise on touch."""
         try:
@@ -344,16 +381,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         return json.dumps({"ok": True, **budget})
 
     return [
-        run_opening,
-        await_satisfaction,
-        propose_proposition,
-        accept_proposition,
-        reject_proposition,
         reconcile,
         record_scenarios,
         run_assertion_tests,
         probe_batch,
-        run_iteration,
         defer_conflict,
         select_exploration_budget,
     ]
@@ -363,7 +394,12 @@ def build_activity_tools(
     backend: BackendProtocol,
     activity: ModelingActivity,
 ) -> Sequence[BaseTool]:
-    """Proposition tools bound to one Modeling Activity (subagent tool subset)."""
+    """Chapter specialist tools: Proposition lifecycle + the pass/Probe pulse.
+
+    One regime per Modeling Activity (D1) — propose, lapidate, resolve under
+    one roof. The pulse composes in unconditionally here; conduction governs
+    it only on the orchestrator surface.
+    """
     store = PropositionStore(backend)
     pipeline = PipelineStore(backend)
 
@@ -429,6 +465,9 @@ def build_activity_tools(
 
     def complete_modeling_activity() -> str:
         try:
+            # A chapter with no Propositions is vacuously quiet (D3): its
+            # declaration opens and closes the door in one step.
+            pipeline.begin(activity)
             pipeline.complete(activity)
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
@@ -463,8 +502,10 @@ def build_activity_tools(
             func=complete_modeling_activity,
             name="complete_modeling_activity",
             description=(
-                f"Mark the {activity} Modeling Activity complete so the "
-                "pipeline may advance."
+                f"Declare the {activity} Modeling Activity complete so the "
+                "pipeline may advance; a chapter with no Propositions opens "
+                "and closes in this one declaration."
             ),
         ),
+        *build_pulse_tools(backend),
     ]

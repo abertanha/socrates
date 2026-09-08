@@ -1,15 +1,16 @@
 """Session conduction — derived state, pure availability, redirect payloads.
 
-Ticket 13 / spec `session-conduction`: the harness conducts, the model asks.
-The session's order stops living in the prompt: a governor derives the
+Tickets 13–14 / spec `session-conduction`: the harness conducts, the model
+asks. The session's order stops living in the prompt: a governor derives the
 conduction state from persisted facts at tool-dispatch time and out-of-state
 calls receive an explaining redirect (current state + admissible next steps),
 never a bare "no".
 
-This module's enforced seams (the rest of the matrix lands with tickets 14+):
-the Need gate (before the Opening only the Opening exists), `run_opening`
-exactly once, and Modeling Activity precedence for `task` — made proactive,
-where the pipeline store already enforced it reactively.
+Enforced seams: the Need gate (before the Opening only the Opening exists),
+`run_opening` exactly once, Modeling Activity precedence for `task` (made
+proactive, where the pipeline store already enforced it reactively), and the
+pass/Probe pulse's placement — it runs inside the chapter specialists, and
+on the orchestrator surface it exists only in the tail.
 """
 
 from __future__ import annotations
@@ -41,6 +42,20 @@ TAIL = "tail"
 
 OPENING_TOOL = "run_opening"
 TASK_TOOL = "task"
+
+# The pass/Probe pulse. Inside the chapters it is the specialist's own
+# regime; on the orchestrator surface it is admissible only in the tail
+# (`run_iteration` is excluded — a door move, admissible in any state).
+PULSE_TOOLS = frozenset(
+    {
+        "select_exploration_budget",
+        "reconcile",
+        "record_scenarios",
+        "run_assertion_tests",
+        "probe_batch",
+        "defer_conflict",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -142,6 +157,31 @@ def conduction_check(
                     f"attempted '{args.get('subagent_type')}'"
                 ),
             )
+    if tool_name in PULSE_TOOLS and state.label != TAIL:
+        # The pulse's home is the chapters; on this surface, only the tail.
+        home = state.active if state.active is not None else state.expected_activity
+        if home is None:  # pragma: no cover — non-tail post-Opening has one
+            return None
+        home_task = f"task: {ACTIVITY_SUBAGENT_TYPE[home]}"
+        if state.active is not None:
+            reason = (
+                f"the pass/Probe pulse runs inside the open {state.active} "
+                f"chapter — continue it via `{home_task}`; on this surface "
+                "the pulse exists only in the tail"
+            )
+        else:
+            reason = (
+                f"the pass/Probe pulse runs inside the chapters — open the "
+                f"next one via `{home_task}`; on this surface the pulse "
+                "exists only in the tail"
+            )
+        return _redirect(
+            state,
+            tool_name,
+            args,
+            admissible_next=[home_task],
+            reason=reason,
+        )
     return None
 
 

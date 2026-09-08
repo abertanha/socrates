@@ -1,9 +1,11 @@
 """Orchestration test for ticket 06 — Supersede routing.
 
-Seam: session orchestration with the model provider stubbed.
-Covers L2 Supersede (displaced recorded; new → Candidate), cascade Degrade of
-indirectly Accepted dependents with notification (not permission), L1 in-line
-Probe resolution, and L3 blocked by the Rejection Guardrail.
+Seam: session orchestration with the model provider stubbed (ticket 14
+shape: the three chapters run first via `task`, so the Supersede sagas live
+in the tail, where the orchestrator keeps the pulse). Covers L2 Supersede
+(displaced recorded; new → Candidate), cascade Degrade of indirectly
+Accepted dependents with notification (not permission), L1 in-line Probe
+resolution, and L3 blocked by the Rejection Guardrail.
 """
 
 from __future__ import annotations
@@ -55,6 +57,49 @@ def _two_scenarios(prefix: str) -> list[dict]:
     ]
 
 
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
+    return StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+            AIMessage(content=f"{label} activity complete."),
+        ],
+        label=label,
+    )
+
+
+def _three_chapter_walk() -> list[AIMessage]:
+    """Walk the three chapters so the orchestrator reaches the tail."""
+    return [
+        _tool_call(
+            "task",
+            {"subagent_type": "requirements", "description": "Run Requirements."},
+            "task-req",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "domain-modeling", "description": "Run Structure."},
+            "task-dom",
+        ),
+        _tool_call(
+            "task",
+            {
+                "subagent_type": "behavioral-specification",
+                "description": "Run Rules.",
+            },
+            "task-beh",
+        ),
+    ]
+
+
+def _close_stubs() -> dict:
+    return {
+        "requirements": _chapter_close_stub("req"),
+        "domain_modeling": _chapter_close_stub("dom"),
+        "behavioral_specification": _chapter_close_stub("beh"),
+    }
+
+
 def test_supersede_cascade_l1_inline_l3_blocked():
     need = "Marketplace checkout payments domain."
     foundation = "A Payment belongs to exactly one Order."
@@ -68,6 +113,7 @@ def test_supersede_cascade_l1_inline_l3_blocked():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
+            *_three_chapter_walk(),
             _tool_call(
                 "propose_proposition",
                 {"statement": foundation, "activity": "domain_modeling"},
@@ -173,7 +219,7 @@ def test_supersede_cascade_l1_inline_l3_blocked():
             AIMessage(content="Supersede routing pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, activity_models=_close_stubs())
     config = _thread_config()
 
     opening = agent.invoke(
@@ -273,6 +319,7 @@ def test_l3_supersede_rejected_by_guardrail_routing():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
+            *_three_chapter_walk(),
             _tool_call(
                 "propose_proposition",
                 {"statement": "Seed Accepted.", "activity": "requirements"},
@@ -342,7 +389,7 @@ def test_l3_supersede_rejected_by_guardrail_routing():
             AIMessage(content="done"),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, activity_models=_close_stubs())
     config = _thread_config()
 
     r = agent.invoke({"messages": [HumanMessage("Start")]}, config=config)
