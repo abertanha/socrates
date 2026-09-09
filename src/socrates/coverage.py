@@ -1,9 +1,14 @@
 """Coverage-driven exploration budget (ADR-0004).
 
-Coverage is read pass-over-pass from declining Conflict signals. The per-pass
-recursion limit scales inversely with Coverage — an exploration allowance,
-never a quality gate (ADR-0002). Chosen limits must be stamped onto subagent
-invokes so they do not silently fall back to 25 (deepagents #1698).
+Coverage reads the trend of the Conflict signals, not two points: the
+moving-average crossover clamp(1 − EMA_short / EMA_long) over the
+conflicts-per-pass series (ticket 15). No peak exists, so an Opening flood
+cannot hold the signal hostage; both averages move slowly, so oscillation
+damps; rising production clamps Coverage to 0, granting maximum generosity
+during rework with no special case. The per-pass recursion limit scales
+inversely with Coverage — an exploration allowance, never a quality gate
+(ADR-0002). Chosen limits must be stamped onto subagent invokes so they do
+not silently fall back to 25 (deepagents #1698).
 """
 
 from __future__ import annotations
@@ -24,21 +29,41 @@ SILENT_SUBAGENT_FALLBACK = 25
 RECURSION_LIMIT_GENEROUS = 200  # low Coverage — sparse, early
 RECURSION_LIMIT_LEAN = 40  # high Coverage — mature
 
+# Crossover smoothing spans, in passes, converted with the canonical
+# alpha = 2 / (span + 1): a 3-pass short average against a 9-pass long one
+# (1:3 ratio). Fixed and pinned by tests — both averages are recomputed
+# deterministically from the persisted series at measurement time, so no
+# smoothing state is ever stored (ticket 15).
+EMA_SHORT_SPAN = 3
+EMA_LONG_SPAN = 9
+EMA_SHORT_ALPHA = 2.0 / (EMA_SHORT_SPAN + 1)  # 0.5
+EMA_LONG_ALPHA = 2.0 / (EMA_LONG_SPAN + 1)  # 0.2
+
 
 def measure_coverage(conflicts_per_pass: dict[str, int] | list[int]) -> float:
-    """0.0 = sparse/early; 1.0 = mature. Declining conflicts → rising Coverage."""
+    """0.0 = sparse/early; 1.0 = mature. Declining conflicts → rising Coverage.
+
+    The reading is the moving-average crossover clamp(1 − EMA_short /
+    EMA_long): recent production small relative to the recent past reads as
+    mature; steady or rising production reads as sparse. Both averages are
+    seeded at the first productive pass and recomputed from the series on
+    every call. Zero-conflict passes are never recorded and are filtered
+    here — silence neither raises nor lowers the reading (ADR-0004's
+    asymmetry: over-budgeting is harmless, under-budgeting is expensive). An
+    empty series reads 1.0 — mature by vacuity.
+    """
     if isinstance(conflicts_per_pass, dict):
-        if not conflicts_per_pass:
-            return 0.0
         counts = [conflicts_per_pass[k] for k in sorted(conflicts_per_pass, key=int)]
     else:
         counts = list(conflicts_per_pass)
+    counts = [c for c in counts if c > 0]
     if not counts:
-        return 0.0
-    peak = max(counts)
-    if peak <= 0:
         return 1.0
-    return max(0.0, min(1.0, 1.0 - (counts[-1] / peak)))
+    ema_short = ema_long = float(counts[0])
+    for count in counts[1:]:
+        ema_short = EMA_SHORT_ALPHA * count + (1.0 - EMA_SHORT_ALPHA) * ema_short
+        ema_long = EMA_LONG_ALPHA * count + (1.0 - EMA_LONG_ALPHA) * ema_long
+    return max(0.0, min(1.0, 1.0 - ema_short / ema_long))
 
 
 def recursion_limit_for(coverage: float) -> int:

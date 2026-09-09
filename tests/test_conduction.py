@@ -18,7 +18,7 @@ from langgraph.types import Command
 
 from socrates import StubChatModel, create_socrates_session
 from socrates.conduction import ConductionState, conduction_check
-from socrates.coverage import RECURSION_LIMIT_GENEROUS
+from socrates.coverage import RECURSION_LIMIT_LEAN
 from socrates.paths import CONFLICTS_PATH, COVERAGE_PATH, PIPELINE_PATH
 
 
@@ -523,13 +523,15 @@ def test_full_pass_runs_inside_a_chapter() -> None:
 
     # The budget was selected inside the chapter and rode the pass: the
     # next subagent spawn carried it explicitly (never the silent 25).
+    # Ticket 15: the selection ran before any Conflict existed, and an
+    # empty series reads mature by vacuity — so the carried limit is lean.
     coverage = json.loads(finished["files"][COVERAGE_PATH]["content"])
     assert coverage["conflicts_per_pass"] == {"1": 1}
     propagation = coverage["subagent_propagations"][-1]
     assert propagation["subagent"] == "behavioral-specification"
-    assert propagation["recursion_limit"] == RECURSION_LIMIT_GENEROUS
+    assert propagation["recursion_limit"] == RECURSION_LIMIT_LEAN
     assert propagation["silent_fallback_avoided"] is True
-    assert coverage["last_subagent_recursion_limit"] == RECURSION_LIMIT_GENEROUS
+    assert coverage["last_subagent_recursion_limit"] == RECURSION_LIMIT_LEAN
 
     task_results = [
         m.content
