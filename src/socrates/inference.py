@@ -48,6 +48,9 @@ VALID_EDGES: frozenset[str] = frozenset(
 VALID_KINDS: frozenset[str] = frozenset(
     {"contradiction", "omission", "contrariety", "ambiguity"}
 )
+# Dimensions that mark a party as belonging to the Requirements activity
+# (ticket 16) — used for the warning's scope tie-break.
+_REQUIREMENTS_DIMENSIONS = frozenset({"requirements", "derivation+requirements"})
 
 
 @dataclass
@@ -112,21 +115,64 @@ def propose_iteration_activity(
     return ACTIVITIES_IN_ORDER[idx]
 
 
+def assess_centrality(
+    proposition: Proposition,
+    dependents: int,
+) -> dict[str, Any]:
+    """Central Proposition signal (ticket 16) — derived, never stored.
+
+    Central ⇔ transitive dependents in the ``accepted_via`` derivation graph
+    ∨ Requirements activity. The v1 proxy is deliberately coarse — its
+    Requirements half errs toward over-caution, the safe failure direction
+    for a blocking-ness heuristic. Weight = dependents + (1 if Requirements):
+    an input to payload and ordering only, never to blocking.
+    """
+    requirements = proposition.activity == "requirements"
+    dependents = int(dependents)
+    if dependents > 0 and requirements:
+        dimension = "derivation+requirements"
+    elif dependents > 0:
+        dimension = "derivation"
+    elif requirements:
+        dimension = "requirements"
+    else:
+        dimension = None
+    return {
+        "central": dependents > 0 or requirements,
+        "dimension": dimension,
+        "dependents": dependents,
+        "weight": dependents + (1 if requirements else 0),
+    }
+
+
 def assess_deferral_criticality(
     conflict: Conflict,
     left: Proposition,
     right: Proposition | None = None,
+    *,
+    left_centrality: dict[str, Any] | None = None,
+    right_centrality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Operational blocking-ness for progress — never Model correctness (ADR-0002)."""
+    """Operational blocking-ness for progress — never Model correctness (ADR-0002).
+
+    ``central_proposition`` means the defined concept (ticket 16): a party
+    whose centrality assessment reads central — derivation subtree or
+    Requirements activity — not merely an Accepted one. ``unavoidable``
+    remains ``critical ∧ L4``, hence still exactly L4.
+    """
+    left_centrality = left_centrality or assess_centrality(left, 0)
+    if right is None:
+        right_centrality = None
+    else:
+        right_centrality = right_centrality or assess_centrality(right, 0)
     reasons: list[str] = []
     if conflict.level in ("L2", "L3", "L4"):
         reasons.append("high_conflict_level")
-    if left.status == "accepted":
+    parties = [{"id": left.id, "centrality": left_centrality}]
+    if right is not None:
+        parties.append({"id": right.id, "centrality": right_centrality})
+    if any(p["centrality"]["central"] for p in parties):
         reasons.append("central_proposition")
-    if right is not None and right.status == "accepted":
-        reasons.append("central_proposition")
-    # Preserve order, drop duplicates.
-    reasons = list(dict.fromkeys(reasons))
     critical = bool(reasons)
     unavoidable = is_unavoidable(conflict.level, critical=critical)
     return {
@@ -135,6 +181,7 @@ def assess_deferral_criticality(
         "deferrable": not unavoidable,
         "unavoidable": unavoidable,
         "reasons": reasons,
+        "parties": parties,
     }
 
 
@@ -468,12 +515,14 @@ class InferenceEngine:
                         "statement": left.statement,
                         "activity": left.activity,
                         "status": left.status,
+                        "centrality": self._centrality_for(left),
                     },
                     {
                         "id": right.id,
                         "statement": right.statement,
                         "activity": right.activity,
                         "status": right.status,
+                        "centrality": self._centrality_for(right),
                     },
                 ],
                 "question": (
@@ -555,24 +604,43 @@ class InferenceEngine:
         return raised
 
     def satisfaction_warning(self) -> dict[str, Any] | None:
-        """Non-blocking, criticality-weighted warning for open deferred Conflicts."""
+        """Non-blocking, criticality-weighted warning for open deferred Conflicts.
+
+        Entries are graded by structural load (ticket 16): weight descending —
+        blast radius decides what is read first — with ties resolving to the
+        Requirements side. Weighing is payload only: the Deferral
+        recommendation stays boolean and the warning never blocks (ADR-0002).
+        """
         deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
         if not deferred:
             return None
-        return {
-            "kind": "deferred_conflicts",
-            "blocking": False,
-            "conflicts": [
+        entries: list[dict[str, Any]] = []
+        for c in deferred:
+            criticality = self._criticality_for(c)
+            centrality = [p["centrality"] for p in criticality["parties"]]
+            entries.append(
                 {
                     "id": c.id,
                     "level": c.level,
                     "summary": c.summary,
                     "proposition_id": c.proposition_id,
                     "other_proposition_id": c.other_proposition_id,
-                    "criticality": self._criticality_for(c),
+                    "criticality": criticality,
+                    # A parked Conflict is as heavy as its heaviest party.
+                    "dependents": max((a["dependents"] for a in centrality), default=0),
+                    "weight": max((a["weight"] for a in centrality), default=0),
+                    "requirements": any(
+                        a["dimension"] in _REQUIREMENTS_DIMENSIONS
+                        for a in centrality
+                    ),
                 }
-                for c in deferred
-            ],
+            )
+        # Weight descending; ties to the Requirements side; id for determinism.
+        entries.sort(key=lambda e: (-e["weight"], not e["requirements"], e["id"]))
+        return {
+            "kind": "deferred_conflicts",
+            "blocking": False,
+            "conflicts": entries,
         }
 
     def _apply_resolutions(
@@ -806,6 +874,11 @@ class InferenceEngine:
     def _require_proposition(self, proposition_id: str) -> None:
         self._propositions.get(proposition_id)
 
+    def _centrality_for(self, proposition: Proposition) -> dict[str, Any]:
+        """Central Proposition assessment from the current graph (ticket 16)."""
+        dependents = self._propositions.transitive_dependents(proposition.id)
+        return assess_centrality(proposition, len(dependents))
+
     def _criticality_for(self, conflict: Conflict) -> dict[str, Any]:
         left = self._propositions.get(conflict.proposition_id)
         right = (
@@ -813,7 +886,15 @@ class InferenceEngine:
             if conflict.other_proposition_id
             else None
         )
-        return assess_deferral_criticality(conflict, left, right)
+        return assess_deferral_criticality(
+            conflict,
+            left,
+            right,
+            left_centrality=self._centrality_for(left),
+            right_centrality=(
+                self._centrality_for(right) if right is not None else None
+            ),
+        )
 
     def _maybe_notify_unavoidable(self, conflict: Conflict) -> None:
         criticality = self._criticality_for(conflict)
