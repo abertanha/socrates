@@ -4,6 +4,11 @@ Seam: session orchestration with the model provider stubbed.
 Covers L4→Iteration (not Probe), most-upstream activity proposal from party
 nature (activity tags), user confirmation, and re-running the reopened
 activity against the current Model.
+
+Re-scripted for ticket 17: chapter specialists walk the treadmill (each
+Proposition lapidated before the chapter may close) and the re-run chapter
+closes through the door; the tail's proposes happen after the walk, where
+any tag enters.
 """
 
 from __future__ import annotations
@@ -41,13 +46,37 @@ def _load_json(files: dict, path: str) -> dict:
     return json.loads(files[path]["content"])
 
 
-def _activity_stub(*, propose_statement: str, label: str) -> StubChatModel:
+def _scenarios(*edges: str) -> str:
+    return json.dumps(
+        [
+            {
+                "description": f"Scenario for the {edge} edge",
+                "edge": edge,
+                "need_relevant": True,
+            }
+            for edge in edges
+        ]
+    )
+
+
+def _activity_stub(
+    *, propose_statement: str, proposition_id: str, label: str, edges=("one", "many")
+) -> StubChatModel:
+    """Propose one Proposition, lapidate it, then close through the door."""
     return StubChatModel(
         responses=[
             _tool_call(
                 "propose_proposition",
                 {"statement": propose_statement},
                 f"{label}-propose",
+            ),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": proposition_id,
+                    "scenarios_json": _scenarios(*edges),
+                },
+                f"{label}-scenarios",
             ),
             _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
             AIMessage(content=f"{label} activity complete."),
@@ -91,6 +120,16 @@ def _three_chapter_walk() -> list[AIMessage]:
     ]
 
 
+def _close_three_doors(agent, config, state) -> dict:
+    """Resume the three chapter doors with "close" — the tail opens (17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = state["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        state = agent.invoke(Command(resume="close"), config=config)
+    return state
+
+
 def test_l4_iteration_proposes_upstream_confirms_and_reruns():
     need = "Marketplace checkout payments domain."
     req_statement = "Checkout must capture payment authorization."
@@ -103,19 +142,36 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
 
     requirements_model = StubChatModel(
         responses=[
-            # First pass
+            # First pass: propose, lapidate, close through the door.
             _tool_call(
                 "propose_proposition",
                 {"statement": req_statement},
                 "req-propose",
             ),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p1",
+                    # s1 (intersection) and s2 (one) feed the tail's L4 test.
+                    "scenarios_json": _scenarios("intersection", "one"),
+                },
+                "req-scenarios",
+            ),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
-            # Re-run after Iteration
+            # Re-run after Iteration: same treadmill, then the door again.
             _tool_call(
                 "propose_proposition",
                 {"statement": revised_req},
                 "req-revise",
+            ),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p4",
+                    "scenarios_json": _scenarios("one", "many"),
+                },
+                "req-scenarios-2",
             ),
             _tool_call("complete_modeling_activity", {}, "req-complete-2"),
             AIMessage(content="req activity re-run complete."),
@@ -124,10 +180,12 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
     )
     domain_model = _activity_stub(
         propose_statement=domain_statement,
+        proposition_id="p2",
         label="dom",
     )
     behavioral_model = _activity_stub(
         propose_statement=behavioral_statement,
+        proposition_id="p3",
         label="beh",
     )
 
@@ -161,27 +219,8 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
             # Accept Need-assumption (p1) and entity (p2) — mixed activities.
             _tool_call("accept_proposition", {"proposition_id": "p1"}, "acc-p1"),
             _tool_call("accept_proposition", {"proposition_id": "p2"}, "acc-p2"),
-            _tool_call(
-                "record_scenarios",
-                {
-                    "proposition_id": "p1",
-                    "scenarios_json": json.dumps(
-                        [
-                            {
-                                "description": "Intersection of Need and ownership",
-                                "edge": "intersection",
-                                "need_relevant": True,
-                            },
-                            {
-                                "description": "Authorization captured once",
-                                "edge": "one",
-                                "need_relevant": True,
-                            },
-                        ]
-                    ),
-                },
-                "sc-l4",
-            ),
+            # The requirements chapter already lapidated p1 (s1 intersection,
+            # s2 one) — the tail's Assertion Tests exercise those Scenarios.
             _tool_call(
                 "run_assertion_tests",
                 {
@@ -238,6 +277,8 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    # The three chapters each ask at the door before the tail opens (17).
+    r = _close_three_doors(agent, config, r)
     # accept p1
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
     r = agent.invoke(Command(resume="yes"), config=config)
@@ -277,6 +318,9 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
     }
 
     finished = agent.invoke(Command(resume="yes"), config=config)
+    # The re-run chapter closes through its own door (17).
+    assert finished["__interrupt__"][0].value["kind"] == "door"
+    finished = agent.invoke(Command(resume="close"), config=config)
     assert finished.get("__interrupt__") is None
     assert agent.get_state(config).next == ()
 
@@ -320,6 +364,10 @@ def test_l4_iteration_proposes_domain_for_entity_vs_behavior():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
+            # Walk the chapters first (ticket 17): until the walk is done the
+            # orchestrator's proposes are tag-gated, so these ground-enter in
+            # the tail, where any tag enters.
+            *_three_chapter_walk(),
             _tool_call(
                 "propose_proposition",
                 {"statement": domain_statement, "activity": "domain_modeling"},
@@ -335,9 +383,6 @@ def test_l4_iteration_proposes_domain_for_entity_vs_behavior():
                 "prop-p2",
             ),
             _tool_call("accept_proposition", {"proposition_id": "p2"}, "acc-p2"),
-            # Walk the chapters so the Assertion Tests run in the tail,
-            # where the orchestrator keeps the pulse.
-            *_three_chapter_walk(),
             _tool_call(
                 "record_scenarios",
                 {
@@ -397,6 +442,7 @@ def test_l4_iteration_proposes_domain_for_entity_vs_behavior():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _close_three_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)
     r = agent.invoke(Command(resume="yes"), config=config)
 

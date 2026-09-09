@@ -3,6 +3,11 @@
 Seam: session orchestration with the model provider stubbed.
 At Satisfaction, the persisted Model is materialized as Glossary + Structure
 + conceptual Rules, respecting Implementation-Independence.
+
+Re-scripted for ticket 17: the orchestrator's proposes are tag-gated until
+the chapter walk is done, so each test walks the three chapters (close-stub
+specialists, door answered "close") first; the propositions are then born in
+the tail, where any tag enters.
 """
 
 from __future__ import annotations
@@ -47,6 +52,58 @@ def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
     )
 
 
+def _walk_chapters() -> tuple[list[AIMessage], dict]:
+    """Opening + three chapter tasks, with close-stub specialists.
+
+    Returns the orchestrator's scripted responses for the walk and the
+    activity_models mapping. Each chapter is vacuous (no ground), so its
+    door interrupts once and "close" ends it — the tail opens after.
+    """
+    responses = [
+        _tool_call("run_opening", {}, "open"),
+        _tool_call(
+            "task",
+            {"subagent_type": "requirements", "description": "Requirements."},
+            "task-req",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "domain-modeling", "description": "Structure."},
+            "task-dom",
+        ),
+        _tool_call(
+            "task",
+            {"subagent_type": "behavioral-specification", "description": "Rules."},
+            "task-beh",
+        ),
+    ]
+
+    def close_stub(label: str) -> StubChatModel:
+        return StubChatModel(
+            responses=[
+                _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+                AIMessage(content=f"{label} activity complete."),
+            ],
+            label=label,
+        )
+
+    return responses, {
+        "requirements": close_stub("req"),
+        "domain_modeling": close_stub("dom"),
+        "behavioral_specification": close_stub("beh"),
+    }
+
+
+def _close_three_doors(agent, config, state) -> dict:
+    """Resume the three chapter doors with "close" — the tail opens."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = state["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        state = agent.invoke(Command(resume="close"), config=config)
+    return state
+
+
 def test_satisfaction_materializes_glossary_structure_rules():
     need = "Marketplace checkout payments domain."
     glossary_term = "Payment is the transfer of value that settles an Order."
@@ -64,9 +121,10 @@ def test_satisfaction_materializes_glossary_structure_rules():
     # Requirements bound the Need and are composed into the Glossary.
     requirement_scope = "Every Model must cover settlement of a buyer's Order."
 
+    walk, activity_models = _walk_chapters()
     model = StubChatModel(
         responses=[
-            _tool_call("run_opening", {}, "open"),
+            *walk,
             _tool_call(
                 "propose_proposition",
                 {"statement": glossary_term, "activity": "domain_modeling"},
@@ -126,7 +184,7 @@ def test_satisfaction_materializes_glossary_structure_rules():
         ]
     )
 
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, activity_models=activity_models)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -136,6 +194,7 @@ def test_satisfaction_materializes_glossary_structure_rules():
     assert opening["__interrupt__"][0].value["kind"] == "opening"
 
     state = agent.invoke(Command(resume=need), config=config)
+    state = _close_three_doors(agent, config, state)
     # Accept p1
     assert state["__interrupt__"][0].value["kind"] == "accept"
     state = agent.invoke(Command(resume="yes"), config=config)
@@ -205,9 +264,10 @@ def test_non_affirmative_satisfaction_leaves_deliverable_unwritten():
     need = "Marketplace checkout payments domain."
     term = "Payment is the transfer of value that settles an Order."
 
+    walk, activity_models = _walk_chapters()
     model = StubChatModel(
         responses=[
-            _tool_call("run_opening", {}, "open"),
+            *walk,
             _tool_call(
                 "propose_proposition",
                 {"statement": term, "activity": "domain_modeling"},
@@ -219,7 +279,7 @@ def test_non_affirmative_satisfaction_leaves_deliverable_unwritten():
         ]
     )
 
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, activity_models=activity_models)
     config = _thread_config()
 
     agent.invoke(
@@ -227,6 +287,7 @@ def test_non_affirmative_satisfaction_leaves_deliverable_unwritten():
         config=config,
     )
     state = agent.invoke(Command(resume=need), config=config)
+    state = _close_three_doors(agent, config, state)
     assert state["__interrupt__"][0].value["kind"] == "accept"
     state = agent.invoke(Command(resume="yes"), config=config)
     assert state["__interrupt__"][0].value["kind"] == "satisfaction"
@@ -253,9 +314,10 @@ def test_deliverable_draws_accepted_propositions_only():
     candidate_term = "Basket is the buyer's provisional selection before Order."
     rejected_term = "Invoice is the receipt issued after settlement."
 
+    walk, activity_models = _walk_chapters()
     model = StubChatModel(
         responses=[
-            _tool_call("run_opening", {}, "open"),
+            *walk,
             _tool_call(
                 "propose_proposition",
                 {"statement": accepted_term, "activity": "domain_modeling"},
@@ -282,7 +344,7 @@ def test_deliverable_draws_accepted_propositions_only():
         ]
     )
 
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, activity_models=activity_models)
     config = _thread_config()
 
     agent.invoke(
@@ -290,6 +352,7 @@ def test_deliverable_draws_accepted_propositions_only():
         config=config,
     )
     state = agent.invoke(Command(resume=need), config=config)
+    state = _close_three_doors(agent, config, state)
     assert state["__interrupt__"][0].value["kind"] == "accept"
     state = agent.invoke(Command(resume="yes"), config=config)
     assert state["__interrupt__"][0].value["kind"] == "reject"

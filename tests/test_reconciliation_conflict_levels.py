@@ -92,6 +92,16 @@ def _three_chapter_walk() -> list[AIMessage]:
     ]
 
 
+def _close_three_doors(agent, config, state) -> dict:
+    """Resume the three chapter doors with "close" — the tail opens (17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = state["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        state = agent.invoke(Command(resume="close"), config=config)
+    return state
+
+
 def test_reconciliation_levels_and_scenario_skip():
     need = "Marketplace checkout payments domain."
     p1 = "A Payment belongs to exactly one Order."
@@ -281,6 +291,8 @@ def test_reconciliation_levels_and_scenario_skip():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    # The vacuous chapters each ask at the door before the tail opens (17).
+    r = _close_three_doors(agent, config, r)
     # accept p1
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
     r = agent.invoke(Command(resume="yes"), config=config)

@@ -100,6 +100,16 @@ def _close_stubs() -> dict:
     }
 
 
+def _close_three_doors(agent, config, state) -> dict:
+    """Resume the three chapter doors with "close" — the tail opens (17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = state["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        state = agent.invoke(Command(resume="close"), config=config)
+    return state
+
+
 def test_supersede_cascade_l1_inline_l3_blocked():
     need = "Marketplace checkout payments domain."
     foundation = "A Payment belongs to exactly one Order."
@@ -230,6 +240,8 @@ def test_supersede_cascade_l1_inline_l3_blocked():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    # The vacuous chapters each ask at the door before the tail opens (17).
+    r = _close_three_doors(agent, config, r)
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
     r = agent.invoke(Command(resume="yes"), config=config)
     assert r["__interrupt__"][0].value["proposition_id"] == "p2"
@@ -394,6 +406,7 @@ def test_l3_supersede_rejected_by_guardrail_routing():
 
     r = agent.invoke({"messages": [HumanMessage("Start")]}, config=config)
     r = agent.invoke(Command(resume=need), config=config)
+    r = _close_three_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)  # accept p1
     r = agent.invoke(Command(resume="yes"), config=config)  # reject p2
     assert r["__interrupt__"][0].value["kind"] == "probe"

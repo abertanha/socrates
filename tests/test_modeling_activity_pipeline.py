@@ -4,6 +4,10 @@ Seam: session orchestration with the model provider stubbed.
 Asserts Requirements → Domain Modeling → Behavioral Specification precedence,
 per-activity subagents, activity tags on Propositions, and rejection of
 functional ('the system shall...') statements in Behavioral Specification.
+
+Re-scripted for ticket 17: the treadmill lapidates each Proposition
+(Scenarios) before the chapter may close, and each chapter closes through
+the three-answer door (resumed "close" here).
 """
 
 from __future__ import annotations
@@ -41,27 +45,55 @@ def _load_json(files: dict, path: str) -> dict:
     return json.loads(files[path]["content"])
 
 
+def _scenarios_json(prefix: str) -> str:
+    return json.dumps(
+        [
+            {
+                "description": f"{prefix} edge one",
+                "edge": "one",
+                "need_relevant": True,
+            },
+            {
+                "description": f"{prefix} edge many",
+                "edge": "many",
+                "need_relevant": True,
+            },
+        ]
+    )
+
+
 def _activity_stub(
     *,
-    propose_statement: str,
+    statements: list[str],
+    proposition_ids: list[str | None],
     label: str,
-    extra_proposes: list[str] | None = None,
 ) -> StubChatModel:
-    responses: list[AIMessage] = [
-        _tool_call(
-            "propose_proposition",
-            {"statement": propose_statement},
-            f"{label}-propose",
-        ),
-    ]
-    for i, statement in enumerate(extra_proposes or []):
+    """A specialist walking the treadmill: each Proposition is lapidated
+    (Scenarios) before the next propose, then the chapter's door closes.
+
+    ``proposition_ids`` carries None for a statement that is never born as
+    a Proposition (a functional requirement in Behavioral Specification) —
+    nothing to lapidate, so no Scenarios call is scripted for it.
+    """
+    assert len(statements) == len(proposition_ids)
+    responses: list[AIMessage] = []
+    for statement, pid in zip(statements, proposition_ids):
         responses.append(
             _tool_call(
-                "propose_proposition",
-                {"statement": statement},
-                f"{label}-propose-extra-{i}",
+                "propose_proposition", {"statement": statement}, f"{label}-propose-{pid}"
             )
         )
+        if pid is not None:
+            responses.append(
+                _tool_call(
+                    "record_scenarios",
+                    {
+                        "proposition_id": pid,
+                        "scenarios_json": _scenarios_json(f"{label}-{pid}"),
+                    },
+                    f"{label}-scenarios-{pid}",
+                )
+            )
     responses.append(
         _tool_call("complete_modeling_activity", {}, f"{label}-complete")
     )
@@ -79,19 +111,22 @@ def test_modeling_activity_pipeline_precedence_tags_and_conceptual_rules():
     )
 
     requirements_model = _activity_stub(
-        propose_statement=req_statement,
+        statements=[req_statement],
+        proposition_ids=["p1"],
         label="req",
     )
     domain_model = _activity_stub(
-        propose_statement=domain_statement,
+        statements=[domain_statement],
+        proposition_ids=["p2"],
         label="dom",
     )
-    # Behavioral: first attempt is a functional requirement (must be rejected),
-    # then a conceptual domain rule is accepted as Candidate.
+    # Behavioral: first attempt is a functional requirement (never born as a
+    # Proposition — it never occupies the treadmill), then a conceptual
+    # domain rule is accepted as Candidate.
     behavioral_model = _activity_stub(
-        propose_statement=functional_statement,
+        statements=[functional_statement, behavioral_statement],
+        proposition_ids=[None, "p3"],
         label="beh",
-        extra_proposes=[behavioral_statement],
     )
 
     main_model = StubChatModel(
@@ -142,7 +177,14 @@ def test_modeling_activity_pipeline_precedence_tags_and_conceptual_rules():
     )
     assert opening["__interrupt__"][0].value["kind"] == "opening"
 
-    finished = agent.invoke(Command(resume=need), config=config)
+    r = agent.invoke(Command(resume=need), config=config)
+    # Each chapter's door interrupts in turn; the walk closes them all.
+    for activity in ACTIVITIES_IN_ORDER:
+        door = r["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        r = agent.invoke(Command(resume="close"), config=config)
+    finished = r
     assert finished.get("__interrupt__") is None
     assert agent.get_state(config).next == ()
     assert finished["files"][NEED_PATH]["content"] == need

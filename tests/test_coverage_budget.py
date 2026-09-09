@@ -74,6 +74,14 @@ def _chapter_close_stub(label: str) -> StubChatModel:
     )
 
 
+def _close_door(agent, config, state, activity: str) -> dict:
+    """Resume one chapter door with "close" (ticket 17)."""
+    door = state["__interrupt__"][0].value
+    assert door["kind"] == "door"
+    assert door["activity"] == activity
+    return agent.invoke(Command(resume="close"), config=config)
+
+
 def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     need = "Marketplace checkout payments domain."
     foundation = "A Payment belongs to exactly one Order."
@@ -84,8 +92,9 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
 
     # Sparse pass 1: three Conflicts → low Coverage → generous budget.
     # Mature pass 2: one Reconciliation Conflict → higher Coverage → leaner
-    # budget. The whole pulse runs inside the Domain Modeling specialist;
-    # the final Behavioral spawn proves #1698 propagation of the
+    # budget. The whole pulse runs inside the Domain Modeling specialist on
+    # the treadmill (each Proposition lapidated before the next propose —
+    # ticket 17); the final Behavioral spawn proves #1698 propagation of the
     # chapter-selected limit.
     domain_model = StubChatModel(
         responses=[
@@ -95,9 +104,15 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                 "prop-found",
             ),
             _tool_call("accept_proposition", {"proposition_id": "p1"}, "acc-found"),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p1",
+                    "scenarios_json": json.dumps(_two_scenarios("found")),
+                },
+                "sc-found",
+            ),
             _tool_call("propose_proposition", {"statement": cand_a}, "p2"),
-            _tool_call("propose_proposition", {"statement": cand_b}, "p3"),
-            _tool_call("propose_proposition", {"statement": cand_c}, "p4"),
             _tool_call(
                 "record_scenarios",
                 {
@@ -106,6 +121,24 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                 },
                 "sc-a",
             ),
+            _tool_call("propose_proposition", {"statement": cand_b}, "p3"),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p3",
+                    "scenarios_json": json.dumps(_two_scenarios("b")),
+                },
+                "sc-b",
+            ),
+            _tool_call("propose_proposition", {"statement": cand_c}, "p4"),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p4",
+                    "scenarios_json": json.dumps(_two_scenarios("c")),
+                },
+                "sc-c",
+            ),
             _tool_call(
                 "run_assertion_tests",
                 {
@@ -113,14 +146,14 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                     "outcomes_json": json.dumps(
                         [
                             {
-                                "scenario_id": "s1",
+                                "scenario_id": "s3",
                                 "survives": False,
                                 "kind": "contradiction",
                                 "summary": "A vs B.",
                                 "other_proposition_id": "p3",
                             },
                             {
-                                "scenario_id": "s2",
+                                "scenario_id": "s4",
                                 "survives": False,
                                 "kind": "contradiction",
                                 "summary": "A vs C.",
@@ -132,22 +165,14 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                 "assert-2",
             ),
             _tool_call(
-                "record_scenarios",
-                {
-                    "proposition_id": "p3",
-                    "scenarios_json": json.dumps(_two_scenarios("b")),
-                },
-                "sc-b",
-            ),
-            _tool_call(
                 "run_assertion_tests",
                 {
                     "proposition_id": "p3",
                     "outcomes_json": json.dumps(
                         [
-                            {"scenario_id": "s3", "survives": True},
+                            {"scenario_id": "s5", "survives": True},
                             {
-                                "scenario_id": "s4",
+                                "scenario_id": "s6",
                                 "survives": False,
                                 "kind": "ambiguity",
                                 "summary": "B vs C unsettled.",
@@ -160,7 +185,9 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
             ),
             _tool_call("select_exploration_budget", {}, "budget-sparse"),
             _tool_call("probe_batch", {}, "probe-1"),
-            # Pass 2: one L2 via Reconciliation only (no Scenarios required).
+            # Pass 2: one L2 via Reconciliation; the proposed ground
+            # lapidates after its Probe resolves (the treadmill — 17) so
+            # the chapter goes quiet for the door.
             _tool_call("propose_proposition", {"statement": new_vs_accepted}, "prop-l2"),
             _tool_call(
                 "reconcile",
@@ -181,6 +208,19 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
             ),
             _tool_call("select_exploration_budget", {}, "budget-mature"),
             _tool_call("probe_batch", {}, "probe-2"),
+            # The Probe resolution unblocks p5 (Reconciliation-contradicted
+            # ground cannot lapidate while its Conflict is open) and opens
+            # pass 3 — an empty Reconciliation satisfies the pass gate, then
+            # p5 lapidates so the chapter goes quiet for the door (17).
+            _tool_call("reconcile", {"findings_json": "[]"}, "reconcile-empty"),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p5",
+                    "scenarios_json": json.dumps(_two_scenarios("l2")),
+                },
+                "sc-l2",
+            ),
             _tool_call("complete_modeling_activity", {}, "dom-complete"),
             AIMessage(content="dom activity complete."),
         ],
@@ -231,6 +271,9 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    # The vacuous requirements chapter asks at its door before Domain
+    # Modeling opens (ticket 17).
+    r = _close_door(agent, config, r, "requirements")
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
     r = agent.invoke(Command(resume="yes"), config=config)
 
@@ -255,7 +298,7 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     assert len(probe2["conflicts"]) == 1
     assert probe2["conflicts"][0]["level"] == "L2"
 
-    finished = agent.invoke(
+    r = agent.invoke(
         Command(
             resume={
                 "resolutions": [
@@ -268,6 +311,10 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
         ),
         config=config,
     )
+    # The Domain chapter's door — every Proposition lapidated on the
+    # treadmill, no pending Batch — then the vacuous Behavioral chapter's.
+    r = _close_door(agent, config, r, "domain_modeling")
+    finished = _close_door(agent, config, r, "behavioral_specification")
     assert finished.get("__interrupt__") is None
     assert agent.get_state(config).next == ()
 

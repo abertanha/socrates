@@ -102,6 +102,16 @@ def _close_stubs() -> dict:
     }
 
 
+def _close_three_doors(agent, config, state) -> dict:
+    """Resume the three chapter doors with "close" — the tail opens (17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = state["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        state = agent.invoke(Command(resume="close"), config=config)
+    return state
+
+
 def test_deferral_criticality_reraise_and_satisfaction_warning():
     need = "Marketplace checkout payments domain."
     foundation = "A Payment belongs to exactly one Order."
@@ -206,6 +216,8 @@ def test_deferral_criticality_reraise_and_satisfaction_warning():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    # The vacuous chapters each ask at the door before the tail opens (17).
+    r = _close_three_doors(agent, config, r)
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
     r = agent.invoke(Command(resume="yes"), config=config)
 
@@ -375,6 +387,7 @@ def test_l4_is_unavoidable_and_cannot_be_deferred():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _close_three_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)
     finished = agent.invoke(Command(resume="yes"), config=config)
 

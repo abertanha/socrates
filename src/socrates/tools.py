@@ -27,6 +27,10 @@ SATISFACTION_QUESTION = (
     "Does this feel right to you as it stands, or is there more to work through?"
 )
 
+# The door's three answers (ticket 17 / D3-D4): close the chapter, keep it
+# open, or route to the Satisfaction flow without closing it.
+DOOR_ANSWERS = ("close", "not yet", "satisfaction")
+
 # The pass/Probe pulse, stated once for every chapter specialist: one
 # regime per chapter — propose, lapidate, resolve under one roof (D1).
 _ACTIVITY_PULSE = (
@@ -38,7 +42,12 @@ _ACTIVITY_PULSE = (
     "`run_assertion_tests` (L1/L4) → `probe_batch` for L1–L3. Deferrable "
     "Conflicts may be deferred. L4 Conflicts are unavoidable — never defer "
     "or Probe them; surface them and let the orchestrator carry them to "
-    "Iteration. When the chapter is quiet, call `complete_modeling_activity`."
+    "Iteration. The treadmill keeps one unlapidated Proposition at a time: "
+    "lapidate each Proposition (Scenarios, Assertion Tests) before proposing "
+    "the next — ground born from Probe resolution is exempt and enters "
+    "immediately. Call `complete_modeling_activity` when the chapter is "
+    "quiet; the user then answers at the door: close, not yet, or "
+    "Satisfaction."
 )
 
 ACTIVITY_PROMPTS: dict[ModelingActivity, str] = {
@@ -105,6 +114,92 @@ def _is_confirmed(answer: Any, action: str) -> bool:
     return normalized in _ACTION_CONFIRMS.get(action, _GENERIC_CONFIRMS)
 
 
+# The door's answer vocabulary (ticket 17) — contextual polarity like
+# accept/reject: "yes" closes, "no" keeps the chapter open, a Satisfaction
+# word routes to the Satisfaction flow. An unrecognized answer keeps the
+# chapter open — the door never closes or ends the session on a mumble.
+# English-only, consistent with the deferred bilingual confirm/decline work.
+_DOOR_SATISFACTION_WORDS = frozenset(
+    {
+        "satisfaction",
+        "satisfied",
+        "im satisfied",
+        "i am satisfied",
+        "enough",
+        "stop here",
+        "terminate",
+    }
+)
+_DOOR_CLOSE_WORDS = _GENERIC_CONFIRMS | {
+    "close",
+    "closed",
+    "done",
+    "proceed",
+    "move on",
+}
+_DOOR_NOT_YET_WORDS = frozenset(
+    {
+        "not yet",
+        "no",
+        "n",
+        "later",
+        "wait",
+        "not now",
+        "keep open",
+        "keep it open",
+        "continue",
+        "keep going",
+    }
+)
+
+
+def _parse_door_answer(answer: Any) -> str:
+    """Map a door resume to one of ``DOOR_ANSWERS`` ("close" / "not_yet" /
+    "satisfaction")."""
+    if isinstance(answer, bool):
+        return "close" if answer else "not_yet"
+    if not isinstance(answer, str):
+        return "not_yet"
+    normalized = " ".join(answer.strip().casefold().split())
+    if not normalized:
+        return "not_yet"
+    if normalized in _DOOR_SATISFACTION_WORDS or "satisf" in normalized:
+        return "satisfaction"
+    if normalized in _DOOR_CLOSE_WORDS:
+        return "close"
+    if normalized in _DOOR_NOT_YET_WORDS:
+        return "not_yet"
+    if normalized.startswith("yes"):
+        return "close"
+    return "not_yet"
+
+
+def _ask_satisfaction(
+    inference: InferenceEngine, deliverable: DeliverableComposer
+) -> str:
+    """The Satisfaction interrupt and its follow-through — shared by the
+    tail's `await_satisfaction` and the door's third answer (ticket 17)."""
+    # Warning only — Satisfaction is never hard-blocked (ADR-0002).
+    warning = inference.satisfaction_warning()
+    answer = str(
+        interrupt(
+            {
+                "kind": "satisfaction",
+                "question": SATISFACTION_QUESTION,
+                "deferred_warning": warning,
+            }
+        )
+    )
+    if is_affirmative_satisfaction(answer):
+        paths = deliverable.materialize()
+        joined = ", ".join(paths)
+        return (
+            f"Satisfaction signal received: {answer}. "
+            f"Conceptual Domain Model materialized at {joined}."
+        )
+    return f"Satisfaction signal received: {answer}"
+
+
 def _declined(action: str, proposition_id: str, status: str) -> str:
     return json.dumps(
         {
@@ -157,25 +252,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         an affirmative answer, materializes the Conceptual Domain Model as
         Glossary + Structure + Rules under /model/deliverable/.
         """
-        # Warning only — Satisfaction is never hard-blocked (ADR-0002).
-        warning = inference.satisfaction_warning()
-        answer = str(
-            interrupt(
-                {
-                    "kind": "satisfaction",
-                    "question": SATISFACTION_QUESTION,
-                    "deferred_warning": warning,
-                }
-            )
-        )
-        if is_affirmative_satisfaction(answer):
-            paths = deliverable.materialize()
-            joined = ", ".join(paths)
-            return (
-                f"Satisfaction signal received: {answer}. "
-                f"Conceptual Domain Model materialized at {joined}."
-            )
-        return f"Satisfaction signal received: {answer}"
+        return _ask_satisfaction(inference, deliverable)
 
     @tool
     def propose_proposition(statement: str, activity: ModelingActivity) -> str:
@@ -398,10 +475,15 @@ def build_activity_tools(
 
     One regime per Modeling Activity (D1) — propose, lapidate, resolve under
     one roof. The pulse composes in unconditionally here; conduction governs
-    it only on the orchestrator surface.
+    it only on the orchestrator surface. The chapter door (ticket 17) lives
+    in `complete_modeling_activity`: when the chapter is quiet, its
+    declaration interrupts the user with three answers — close / not yet /
+    Satisfaction.
     """
     store = PropositionStore(backend)
     pipeline = PipelineStore(backend)
+    inference = InferenceEngine(backend)
+    deliverable = DeliverableComposer(backend)
 
     def propose_proposition(statement: str) -> str:
         try:
@@ -464,6 +546,47 @@ def build_activity_tools(
         return json.dumps(_proposition_payload(prop))
 
     def complete_modeling_activity() -> str:
+        """Declare the chapter complete — the user confirms at the door.
+
+        The conduction governor has already established the chapter is quiet
+        (every Proposition born in it through ≥1 pass, no Batch pending);
+        quiet is bookkeeping, "good enough to close" is the user's judgment
+        (ADR-0002). The declaration interrupts with three answers (D3/D4):
+        "close" completes the chapter, "not yet" keeps it open (the
+        maieutic valve stays live), "satisfaction" routes to the
+        Satisfaction flow WITHOUT closing the chapter.
+        """
+        answer = interrupt(
+            {
+                "kind": "door",
+                "activity": activity,
+                "question": (
+                    f"Confirm closing Modeling Activity '{activity}'?"
+                ),
+                "answers": list(DOOR_ANSWERS),
+            }
+        )
+        door = _parse_door_answer(answer)
+        if door == "not_yet":
+            return json.dumps(
+                {
+                    "ok": True,
+                    "door": "not_yet",
+                    "activity": activity,
+                    "chapter_open": True,
+                }
+            )
+        if door == "satisfaction":
+            outcome = _ask_satisfaction(inference, deliverable)
+            return json.dumps(
+                {
+                    "ok": True,
+                    "door": "satisfaction",
+                    "activity": activity,
+                    "chapter_open": True,
+                    "satisfaction": outcome,
+                }
+            )
         try:
             # A chapter with no Propositions is vacuously quiet (D3): its
             # declaration opens and closes the door in one step.
@@ -471,7 +594,9 @@ def build_activity_tools(
             pipeline.complete(activity)
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps({"ok": True, "completed": activity})
+        return json.dumps(
+            {"ok": True, "completed": activity, "door": "close"}
+        )
 
     return [
         StructuredTool.from_function(
@@ -502,9 +627,11 @@ def build_activity_tools(
             func=complete_modeling_activity,
             name="complete_modeling_activity",
             description=(
-                f"Declare the {activity} Modeling Activity complete so the "
-                "pipeline may advance; a chapter with no Propositions opens "
-                "and closes in this one declaration."
+                f"Declare the {activity} Modeling Activity complete when the "
+                "chapter is quiet — every Proposition born in it has been "
+                "through a pass (Scenarios / Assertion Tests) and no Batch "
+                "awaits the user. The declaration opens the door: the user "
+                "answers close, not yet, or Satisfaction."
             ),
         ),
         *build_pulse_tools(backend),

@@ -23,7 +23,7 @@ from socrates.coverage import (
     RECURSION_LIMIT_GENEROUS,
     BudgetAwareSubagent,
 )
-from socrates.conduction import ConductionMiddleware
+from socrates.conduction import CHAPTER, ConductionMiddleware
 from socrates.model import ModelProvider
 from socrates.pipeline import (
     ACTIVITIES_IN_ORDER,
@@ -124,8 +124,16 @@ def _build_activity_subagents(
             "model": model,
             # FilesystemMiddleware supplies the `files` state channel that
             # StateBackend tools need (same stack create_deep_agent adds for
-            # raw SubAgent specs).
-            "middleware": [FilesystemMiddleware(backend=backend)],
+            # raw SubAgent specs). ConductionMiddleware on the chapter
+            # surface enforces the in-chapter rules (ticket 17): the
+            # treadmill, no new pass while a Batch awaits the user, and
+            # quiet-is-counting for the door's declaration.
+            "middleware": [
+                FilesystemMiddleware(backend=backend),
+                ConductionMiddleware(
+                    backend, surface=CHAPTER, activity=activity
+                ),
+            ],
         }
         inner = create_sub_agent(raw)
         subagents.append(

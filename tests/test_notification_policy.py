@@ -93,6 +93,16 @@ def _three_chapter_walk() -> list[AIMessage]:
     ]
 
 
+def _close_three_doors(agent, config, state) -> dict:
+    """Resume the three chapter doors with "close" — the tail opens (17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = state["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        state = agent.invoke(Command(resume="close"), config=config)
+    return state
+
+
 def test_notification_policy_quiet_unavoidable_cascade_and_stubbed_channels():
     need = "Marketplace checkout payments domain."
     foundation = "A Payment belongs to exactly one Order."
@@ -253,6 +263,8 @@ def test_notification_policy_quiet_unavoidable_cascade_and_stubbed_channels():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    # The vacuous chapters each ask at the door before the tail opens (17).
+    r = _close_three_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)  # p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p2
     r = agent.invoke(Command(resume="yes"), config=config)  # p3
