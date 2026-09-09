@@ -74,6 +74,32 @@ _Avoid_: "data modeling", ER (that is behavior/implementation-leaning)
 The third Modeling Activity: infer the *conceptual* behavior and relationships between domain entities such that, together, they satisfy the Need — *what the domain does*, stated as domain rules, not as functional requirements. Bounded to the conceptual level: "the system shall..." functional and non-functional requirements are downstream and out of scope.
 _Avoid_: "the logic", business rules (too vague), algorithm, functional requirements ("the system shall...")
 
+### Session conduction
+
+**Chapter**:
+A Modeling Activity as it lives in one running session — the stretch of the Mapping spent inside a single activity, opened in precedence and closed at its door. The same three activities walked as three consecutive chapters; Iteration reopens an earlier one when an L4 Conflict invalidates its ground. Precedence among chapters is enforced by the harness's conduction, never merely requested of the model.
+_Avoid_: Phase (managerial), stage, "sub-agent" (implementation)
+
+**Door**:
+The user-confirmed close of a chapter. The model declares the chapter complete once it is quiet; the user answers at the door — close, not yet, or Satisfaction. Every door is a steering wheel on the session itself: the third answer ends the Mapping where it stands, doors still open, with a warning that names the chapters never visited.
+_Avoid_: Gate (implies a quality bar), checkpoint, milestone
+
+**Quiet**:
+The counting a chapter must show before its door may open: every Proposition born in the chapter has been through at least one pass, and no Batch awaits the user on any ground. Bookkeeping, never judgment — quiet says the ground was examined, not that it is good (ADR-0002). Deferred Conflicts never make a chapter unquiet.
+_Avoid_: Done, stable, "good enough" (quality judgments)
+
+**Lapidate**:
+To work a Proposition through a pass — Scenarios, then Assertion Tests — so it is no longer raw ground. A Proposition counts as lapidated once at least one Scenario is recorded for it; the counting unit of the treadmill.
+_Avoid_: Polish (subjective), finalize, verify (implies proof)
+
+**Treadmill**:
+The chapter's rhythm: at most one unlapidated Proposition at any moment — the next proposal waits until the current ground has been through a pass. Keeps Conflicts surfacing while the ground is fresh, not in an end-of-chapter flood.
+_Avoid_: Queue, throttle, pipeline (implementation)
+
+**Valve**:
+The maieutic release on the treadmill: proposing stays available in every post-Opening state, so ground revealed while resolving a Probe is born immediately — never queued behind a Batch or a lapidation debt. What the treadmill limits is the pass, never the Proposition.
+_Avoid_: Escape hatch (informal), bypass (implies evasion), workaround
+
 ### The maieutic method
 
 **Maieutics**:
