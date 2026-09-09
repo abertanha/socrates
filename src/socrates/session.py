@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
 from deepagents import (
@@ -15,7 +14,7 @@ from deepagents import (
     register_harness_profile,
 )
 from deepagents.backends import StateBackend
-from deepagents.backends.protocol import BackendProtocol
+from deepagents.backends.protocol import BackendProtocol, ReadResult
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, create_sub_agent
 from langchain_core.messages import HumanMessage
@@ -160,14 +159,6 @@ def _build_activity_subagents(
     return subagents
 
 
-@dataclass(frozen=True)
-class _SnapshotRead:
-    """The read shape the conduction rules expect, over captured files."""
-
-    error: bool
-    file_data: dict[str, Any] | None
-
-
 class _SnapshotBackend:
     """Read-only BackendProtocol view over a captured ``files`` state.
 
@@ -180,11 +171,11 @@ class _SnapshotBackend:
     def __init__(self, files: dict[str, Any] | None) -> None:
         self._files = files or {}
 
-    def read(self, path: str) -> _SnapshotRead:
+    def read(self, path: str) -> ReadResult:
         entry = self._files.get(path)
         if entry is None:  # absent, or a deletion marker
-            return _SnapshotRead(error=True, file_data=None)
-        return _SnapshotRead(error=False, file_data=entry)
+            return ReadResult(error="absent from the files snapshot")
+        return ReadResult(file_data=entry)
 
 
 def _deliverable_materialized(files: dict[str, Any] | None) -> bool:

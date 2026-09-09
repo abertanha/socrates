@@ -440,8 +440,17 @@ def silence_redirect(state: ConductionState) -> dict[str, Any]:
     without an affirmative Satisfaction, the session continues — this is
     the redirect injected as the next turn, naming the state and the
     admissible next steps (the same shape as every other redirect, so the
-    model's map back is one it already knows how to read)."""
-    if state.label == TAIL:
+    model's map back is one it already knows how to read). The admissible
+    step is always one the state actually admits: pre-Opening, the only
+    admissible tool is the Opening itself (D6 row 1)."""
+    if not state.need_registered:
+        admissible_next = [OPENING_TOOL]
+        reason = (
+            "the session ends only through the user's Satisfaction — "
+            "silence is not an end; the session has not opened yet — "
+            "greet the user and elicit the Need via `run_opening`"
+        )
+    elif state.label == TAIL:
         admissible_next = [_TAIL_NEXT, _TAIL_PULSE_NEXT]
         reason = (
             "the session ends only through the user's Satisfaction — "

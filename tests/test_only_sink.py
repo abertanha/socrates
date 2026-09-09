@@ -263,6 +263,68 @@ def test_declined_satisfaction_keeps_the_session_alive() -> None:
     assert DELIVERABLE_GLOSSARY_PATH not in r["files"]
 
 
+def test_pre_opening_silence_is_reinjected_toward_the_opening() -> None:
+    """The model goes quiet before the Opening ever ran — the redirect
+    names the only tool the state admits (D6 row 1), never Satisfaction."""
+    model = StubChatModel(
+        responses=[
+            AIMessage(content="..."),  # silence, before any tool
+            _tool_call("run_opening", {}, "open"),
+        ],
+        label="main",
+    )
+    agent = create_socrates_session(model=model)
+    config = _thread_config()
+
+    r = agent.invoke({"messages": [HumanMessage(content="Start")]}, config=config)
+    assert r["__interrupt__"][0].value["kind"] == "opening"
+
+    redirect = _reinjection_after(agent.get_state(config).values["messages"], "...")
+    assert redirect["ok"] is False
+    assert redirect["conduction"]["state"] == "pre-opening"
+    assert redirect["conduction"]["admissible_next"] == ["run_opening"]
+    assert "Satisfaction" in redirect["redirect"]
+
+
+def test_post_opening_silence_is_reinjected_toward_the_chapter_walk() -> None:
+    """The spec's originating scenario: long silence right after the
+    Opening, the session's widest decision point — the redirect names the
+    chapter walk, and the session reaches the first door."""
+    requirements_model = _vacuous_chapter_stub("req")
+    model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "open"),
+            AIMessage(content="(the model considers its options...)"),  # silence
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Requirements."},
+                "task-req",
+            ),
+        ],
+        label="main",
+    )
+    agent = create_socrates_session(
+        model=model,
+        activity_models={"requirements": requirements_model},
+    )
+    config = _thread_config()
+
+    r = agent.invoke({"messages": [HumanMessage(content="Start")]}, config=config)
+    assert r["__interrupt__"][0].value["kind"] == "opening"
+    # The silence did not end the session: the re-injection steered the
+    # model into the first chapter, whose door interrupts the user.
+    r = agent.invoke(Command(resume="A checkout."), config=config)
+    assert r["__interrupt__"][0].value["kind"] == "door"
+    assert r["__interrupt__"][0].value["activity"] == "requirements"
+
+    redirect = _reinjection_after(
+        agent.get_state(config).values["messages"],
+        "(the model considers its options...)",
+    )
+    assert redirect["conduction"]["state"] == "between-chapters"
+    assert redirect["conduction"]["admissible_next"] == ["task: requirements"]
+
+
 # --- The warning: chapters never visited, alongside the deferred
 # Conflicts — informed, never blocked (stories 14–15) ----------------------
 

@@ -65,3 +65,45 @@ returns it).
 - **Guard scope:** only the orchestrator's END triggers re-injection. A
   chapter specialist going silent just returns control to the orchestrator
   (the conduction state still names the open chapter; `task` re-enters it).
+
+### Integration addendum (2026-09-09, two-axis review)
+
+Fixed from the review:
+
+- **Pre-Opening silence misdirected** (spec axis, CONFIRMED): the
+  silence redirect's non-tail branch used the chapter-walk pointer, which
+  degenerates to `await_satisfaction` exactly when the Need is not
+  registered — pointing the model at the one tool the Need gate blocks.
+  `silence_redirect` now has its own pre-Opening branch naming
+  `run_opening` (D6 row 1: the only admissible tool). Pinned by
+  `test_pre_opening_silence_is_reinjected_toward_the_opening`; the spec's
+  originating scenario (silence right after the Opening) pinned by
+  `test_post_opening_silence_is_reinjected_toward_the_chapter_walk`.
+- `_SnapshotRead` (bool-error re-creation of the read shape) replaced by
+  the protocol's real `ReadResult` (duplication + type fidelity).
+
+Recorded rulings (both axes flagged; kept deliberately):
+
+- **`reinjection_limit` stays** (standards: speculative generality; spec:
+  scope creep — an opt-out of the headline invariant). It is the
+  blast-radius compromise: the default `None` IS the invariant; the int
+  form is an operational cost bound, and the legacy suites' `0` pins are
+  the honest alternative to re-scripting ~38 endings that test other
+  tickets. The standards axis's conftest factory idea is noted as future
+  test-suite cleanup, not worth re-churning 12 files today.
+- **L4-reopen overwarning kept** (spec axis): after a reopen drops
+  downstream completions, the warning lists chapters the user did visit
+  as never visited — the begin-facts are gone (single `active` slot), and
+  distinguishing them needs persisted visit-state (ADR-0001 violation).
+  The overstatement is conservative and directionally right per US 20:
+  the invalidated chapters genuinely need re-walking. Watch in the first
+  real-model session.
+- **Guard surface is `invoke` only**: no `ainvoke`/`stream` — no caller
+  exists for either; a stream-based runner would fail loudly
+  (AttributeError) rather than silently bypass the guard. Add when the
+  real-session runner picks its driving mode.
+- **Warning `kind` stays `"deferred_conflicts"`** (standards: mysterious
+  name when `conflicts == []`): the warning's provenance and graded
+  entries are the deferred Conflicts; the chapters line rides along.
+  Renaming would churn consumers for a cosmetic gain — revisit when the
+  real-session runner renders the payload.
