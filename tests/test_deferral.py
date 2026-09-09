@@ -167,7 +167,8 @@ def test_deferral_criticality_reraise_and_satisfaction_warning():
                 "rej-touch",
             ),
             _tool_call("probe_batch", {}, "probe-reraise"),
-            # Pass 2: critical L2 (high level + central Accepted) — recommend against.
+            # Pass 2: critical L2 (high level; both parties are leaves — no
+            # centrality reason under ticket 16's defined concept).
             _tool_call(
                 "propose_proposition",
                 {"statement": new_vs_accepted, "activity": "domain_modeling"},
@@ -263,7 +264,9 @@ def test_deferral_criticality_reraise_and_satisfaction_warning():
     assert l2["deferral"]["critical"] is True
     assert l2["deferral"]["recommend_against"] is True
     assert "high_conflict_level" in l2["deferral"]["reasons"]
-    assert "central_proposition" in l2["deferral"]["reasons"]
+    # Ticket 16: the accepted party here is a leaf (no dependents, not
+    # Requirements) — `central_proposition` no longer proxies "Accepted".
+    assert l2["deferral"]["reasons"] == ["high_conflict_level"]
 
     r = agent.invoke(
         Command(

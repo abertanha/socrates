@@ -2,7 +2,8 @@
 
 States: Candidate → Accepted; plus Rejected (Rejection Guardrail), Flagged,
 and Superseded (displaced Accepted, recorded with reason). Indirect Acceptance
-is tracked via ``accepted_via`` for Supersede cascades.
+is tracked via ``accepted_via`` for Supersede cascades and the Central
+Proposition signal (ticket 16).
 """
 
 from __future__ import annotations
@@ -246,6 +247,16 @@ class PropositionStore:
         )
         self._save_guardrail(guardrail)
         return prop
+
+    def transitive_dependents(self, proposition_id: str) -> set[str]:
+        """Derivation subtree via ``accepted_via`` — the closure Supersede
+        cascades Degrade, reused as the Central Proposition signal (ticket 16).
+
+        Read from the current graph at assessment time; nothing is stored.
+        """
+        propositions = self._load_propositions()
+        self._get(propositions, proposition_id)
+        return self._indirect_dependents(proposition_id, propositions)
 
     def list_propositions(self) -> list[Proposition]:
         return self._load_propositions()
