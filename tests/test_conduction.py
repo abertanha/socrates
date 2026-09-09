@@ -1010,6 +1010,74 @@ def test_door_interrupt_carries_three_answers_and_close_completes() -> None:
     assert completed["completed"] == "requirements"
 
 
+def test_door_unrecognized_and_negated_answers_keep_the_chapter_open() -> None:
+    """A mumble never closes (and never routes to Satisfaction), and a
+    negated Satisfaction word declines the action's polarity instead of
+    routing — the door parses contextually, like accept/reject."""
+    requirements_model = StubChatModel(
+        responses=[
+            _tool_call(
+                "propose_proposition",
+                {"statement": "Checkout must capture payment authorization."},
+                "req-propose-1",
+            ),
+            _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _tool_call("complete_modeling_activity", {}, "req-complete-1"),
+            # Mumble → not_yet: knock again.
+            _tool_call("complete_modeling_activity", {}, "req-complete-2"),
+            # "not satisfied" → not_yet (never the Satisfaction flow).
+            _tool_call("complete_modeling_activity", {}, "req-complete-3"),
+            AIMessage(content="req activity complete."),
+        ],
+        label="req",
+    )
+    main_model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "open"),
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Requirements."},
+                "task-req",
+            ),
+            AIMessage(content="Chapter closed on the third knock."),
+        ],
+        label="main",
+    )
+    agent = create_socrates_session(
+        model=main_model,
+        activity_models={"requirements": requirements_model},
+    )
+    config = _thread_config()
+
+    r = agent.invoke({"messages": [HumanMessage(content="Start")]}, config=config)
+    assert r["__interrupt__"][0].value["kind"] == "opening"
+    r = agent.invoke(Command(resume="A marketplace checkout."), config=config)
+    assert r["__interrupt__"][0].value["kind"] == "door"
+
+    # A mumble keeps the chapter open — the tool result says not_yet and
+    # the door asks again, not the Satisfaction flow.
+    r = agent.invoke(Command(resume="hm, what?"), config=config)
+    assert r["__interrupt__"][0].value["kind"] == "door"
+    mumble = _tool_result(_subagent_messages(agent, config), "req-complete-1")
+    assert mumble["ok"] is True
+    assert mumble["door"] == "not_yet"
+    assert mumble["chapter_open"] is True
+
+    # Negated Satisfaction declines the polarity: still the door, not the
+    # Satisfaction interrupt.
+    r = agent.invoke(Command(resume="not satisfied"), config=config)
+    assert r["__interrupt__"][0].value["kind"] == "door"
+    negated = _tool_result(_subagent_messages(agent, config), "req-complete-2")
+    assert negated["door"] == "not_yet"
+    assert negated["chapter_open"] is True
+
+    finished = agent.invoke(Command(resume="close"), config=config)
+    assert finished.get("__interrupt__") is None
+    pipeline = json.loads(finished["files"][PIPELINE_PATH]["content"])
+    assert pipeline["completed"] == ["requirements"]
+    assert pipeline["active"] is None
+
+
 def test_door_not_yet_keeps_the_chapter_open_with_the_valve_live() -> None:
     """"not yet" leaves the chapter open (D3) — proposing keeps working
     inside it, and the next declaration asks again."""

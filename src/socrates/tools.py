@@ -95,6 +95,11 @@ _ACTION_CONFIRMS: dict[str, frozenset[str]] = {
 }
 
 
+def _normalize_answer(text: str) -> str:
+    """Casefolded, whitespace-collapsed form of a resume answer."""
+    return " ".join(text.strip().casefold().split())
+
+
 def _is_confirmed(answer: Any, action: str) -> bool:
     """Whether the interrupt resume confirms ``action``.
 
@@ -108,7 +113,7 @@ def _is_confirmed(answer: Any, action: str) -> bool:
         return True
     if not isinstance(answer, str):
         return False
-    normalized = " ".join(answer.strip().casefold().split())
+    normalized = _normalize_answer(answer)
     if normalized.startswith("yes"):
         return True
     return normalized in _ACTION_CONFIRMS.get(action, _GENERIC_CONFIRMS)
@@ -116,9 +121,14 @@ def _is_confirmed(answer: Any, action: str) -> bool:
 
 # The door's answer vocabulary (ticket 17) — contextual polarity like
 # accept/reject: "yes" closes, "no" keeps the chapter open, a Satisfaction
-# word routes to the Satisfaction flow. An unrecognized answer keeps the
-# chapter open — the door never closes or ends the session on a mumble.
+# word routes to the Satisfaction flow. A NEGATED Satisfaction word
+# ("not satisfied") declines the action rather than routing — checked
+# before the substring match. An unrecognized answer keeps the chapter
+# open — the door never closes or ends the session on a mumble.
 # English-only, consistent with the deferred bilingual confirm/decline work.
+# Deliberately distinct from deliverable's affirmative-Satisfaction
+# vocabulary: that answers the Satisfaction question, this chooses a door
+# action — different speech acts, kept in step by their tests.
 _DOOR_SATISFACTION_WORDS = frozenset(
     {
         "satisfaction",
@@ -145,6 +155,8 @@ _DOOR_NOT_YET_WORDS = frozenset(
         "later",
         "wait",
         "not now",
+        "not satisfied",
+        "unsatisfied",
         "keep open",
         "keep it open",
         "continue",
@@ -160,15 +172,17 @@ def _parse_door_answer(answer: Any) -> str:
         return "close" if answer else "not_yet"
     if not isinstance(answer, str):
         return "not_yet"
-    normalized = " ".join(answer.strip().casefold().split())
+    normalized = _normalize_answer(answer)
     if not normalized:
+        return "not_yet"
+    # Declines win before the Satisfaction substring: "not satisfied" is a
+    # negation of the action's polarity, never a route to Satisfaction.
+    if normalized in _DOOR_NOT_YET_WORDS or normalized.startswith("not "):
         return "not_yet"
     if normalized in _DOOR_SATISFACTION_WORDS or "satisf" in normalized:
         return "satisfaction"
     if normalized in _DOOR_CLOSE_WORDS:
         return "close"
-    if normalized in _DOOR_NOT_YET_WORDS:
-        return "not_yet"
     if normalized.startswith("yes"):
         return "close"
     return "not_yet"

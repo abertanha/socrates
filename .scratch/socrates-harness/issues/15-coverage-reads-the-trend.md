@@ -73,3 +73,12 @@ new constants, and every scenario pin mismatches `1 − last/peak`).
   written. The test's intent (explicit propagation, never silent 25) is
   unchanged. `test_conduction.py::test_redirect_*` and all other
   pre-existing tests were untouched and stay green.
+
+### Integration addendum (2026-09-09, two-axis review + user ruling)
+
+The empty→1.0 flip means every session's FIRST budget selection (before any
+Conflict exists) is LEAN 40, was GENEROUS 200. **The user reviewed this
+against ADR-0004's asymmetry and ruled: keep LEAN 40** — faithful to the
+AC's letter and the no-special-case rule; pass 2+ self-corrects to generous
+as soon as any Conflict exists. Recorded so the first real-model session
+knows the first pass digs lean by design.
