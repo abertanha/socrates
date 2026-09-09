@@ -189,12 +189,17 @@ def _parse_door_answer(answer: Any) -> str:
 
 
 def _ask_satisfaction(
-    inference: InferenceEngine, deliverable: DeliverableComposer
+    inference: InferenceEngine,
+    deliverable: DeliverableComposer,
+    *,
+    visiting: ModelingActivity | None = None,
 ) -> str:
     """The Satisfaction interrupt and its follow-through — shared by the
-    tail's `await_satisfaction` and the door's third answer (ticket 17)."""
+    tail's `await_satisfaction` and the door's third answer (ticket 17).
+    ``visiting`` is the door's own activity on the door path: the chapter
+    whose door carries the question counts as visited (ticket 20)."""
     # Warning only — Satisfaction is never hard-blocked (ADR-0002).
-    warning = inference.satisfaction_warning()
+    warning = inference.satisfaction_warning(visiting=visiting)
     answer = str(
         interrupt(
             {
@@ -591,7 +596,7 @@ def build_activity_tools(
                 }
             )
         if door == "satisfaction":
-            outcome = _ask_satisfaction(inference, deliverable)
+            outcome = _ask_satisfaction(inference, deliverable, visiting=activity)
             return json.dumps(
                 {
                     "ok": True,

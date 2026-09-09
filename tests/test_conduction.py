@@ -597,7 +597,7 @@ def test_need_gate_redirects_before_opening_and_admits_after() -> None:
         ],
         label="main",
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     r = agent.invoke({"messages": [HumanMessage(content="Start")]}, config=config)
@@ -655,6 +655,7 @@ def test_opening_once_and_wrong_chapter_task_redirect() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=model,
         activity_models={"requirements": requirements_model},
     )
@@ -728,6 +729,7 @@ def test_orchestrator_pulse_redirects_outside_the_tail() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -830,6 +832,7 @@ def test_full_pass_runs_inside_a_chapter() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={
             "requirements": _chapter_close_stub("req"),
@@ -942,6 +945,7 @@ def test_left_open_chapter_redirects_pulse_to_itself() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -982,6 +986,7 @@ def test_door_interrupt_carries_three_answers_and_close_completes() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": _chapter_close_stub("req")},
     )
@@ -1044,6 +1049,7 @@ def test_door_unrecognized_and_negated_answers_keep_the_chapter_open() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -1115,6 +1121,7 @@ def test_door_not_yet_keeps_the_chapter_open_with_the_valve_live() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -1174,6 +1181,7 @@ def test_door_satisfaction_answer_routes_to_satisfaction_without_closing() -> No
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -1238,6 +1246,7 @@ def test_quiet_redirects_a_premature_completion_declaration() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -1301,6 +1310,7 @@ def test_treadmill_redirects_until_the_predecessor_is_lapidated() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -1398,6 +1408,7 @@ def test_valve_ground_born_from_probe_resolution_enters_immediately() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )
@@ -1449,7 +1460,9 @@ def test_valve_ground_born_from_probe_resolution_enters_immediately() -> None:
 
 def test_deferred_conflict_never_blocks_the_door_and_rides_to_the_warning() -> None:
     """AC: a deferred Conflict does not block the door — it rides to the
-    Satisfaction warning (D3: "Deferring never blocks", extended to doors)."""
+    Satisfaction warning (D3: "Deferring never blocks", extended to doors).
+    Ticket 20: mid-walk `await_satisfaction` redirects (D6), so the warning
+    is reached through the NEXT door's third answer."""
     requirements_model = StubChatModel(
         responses=[
             _tool_call(
@@ -1482,6 +1495,12 @@ def test_deferred_conflict_never_blocks_the_door_and_rides_to_the_warning() -> N
         ],
         label="req",
     )
+    domain_model = StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, "dom-door"),
+        ],
+        label="dom",
+    )
     main_model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "open"),
@@ -1490,14 +1509,22 @@ def test_deferred_conflict_never_blocks_the_door_and_rides_to_the_warning() -> N
                 {"subagent_type": "requirements", "description": "Requirements."},
                 "task-req",
             ),
-            _tool_call("await_satisfaction", {}, "satisfaction"),
+            _tool_call(
+                "task",
+                {"subagent_type": "domain-modeling", "description": "Domain."},
+                "task-dom",
+            ),
             AIMessage(content="Warned at Satisfaction."),
         ],
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
-        activity_models={"requirements": requirements_model},
+        activity_models={
+            "requirements": requirements_model,
+            "domain_modeling": domain_model,
+        },
     )
     config = _thread_config()
 
@@ -1508,12 +1535,16 @@ def test_deferred_conflict_never_blocks_the_door_and_rides_to_the_warning() -> N
     assert r["__interrupt__"][0].value["kind"] == "door"
     r = agent.invoke(Command(resume="close"), config=config)
 
+    # The next chapter's door carries the Satisfaction question (D6).
+    assert r["__interrupt__"][0].value["kind"] == "door"
+    r = agent.invoke(Command(resume="satisfaction"), config=config)
     satisfaction = r["__interrupt__"][0].value
     assert satisfaction["kind"] == "satisfaction"
     warning = satisfaction["deferred_warning"]
     assert warning is not None
     assert warning["blocking"] is False
     assert [c["id"] for c in warning["conflicts"]] == ["c1"]
+    assert warning["chapters_never_visited"] == ["behavioral_specification"]
 
     finished = agent.invoke(Command(resume="no, more to work through"), config=config)
     assert finished.get("__interrupt__") is None
@@ -1558,6 +1589,7 @@ def test_orchestrator_propose_into_open_chapter_is_tag_gated() -> None:
         label="main",
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=main_model,
         activity_models={"requirements": requirements_model},
     )

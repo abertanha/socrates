@@ -246,6 +246,7 @@ def test_notification_policy_quiet_unavoidable_cascade_and_stubbed_channels():
         ]
     )
     agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
         model=model,
         activity_models={
             "requirements": _chapter_close_stub("req"),

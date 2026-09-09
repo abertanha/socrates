@@ -59,7 +59,7 @@ def _scripted_model() -> StubChatModel:
 
 def test_opening_presents_greeting_then_question():
     need = "A tool that tells me which of my cron jobs actually still matter."
-    agent = create_socrates_session(model=_scripted_model())
+    agent = create_socrates_session(model=_scripted_model(), reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     opening = agent.invoke(

@@ -390,6 +390,7 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
     )
 
     agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
         model=main_model,
         activity_models={
             "requirements": _chapter_close_stub("req"),

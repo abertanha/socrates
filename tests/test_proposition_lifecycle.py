@@ -87,7 +87,7 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
             AIMessage(content="Lifecycle pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -166,7 +166,7 @@ def test_accept_and_reject_interrupts_honor_a_declined_answer():
             AIMessage(content="Lifecycle pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, reinjection_limit=0)
     config = _thread_config()
 
     agent.invoke(
@@ -238,7 +238,7 @@ def test_cross_polarity_answer_never_confirms_the_opposite_action():
             AIMessage(content="Cross-polarity pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model)
+    agent = create_socrates_session(model=model, reinjection_limit=0)
     config = _thread_config()
 
     agent.invoke(

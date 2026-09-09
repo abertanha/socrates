@@ -225,6 +225,7 @@ def test_probe_loop_scenarios_assertion_batch_and_model_update():
         ]
     )
     agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
         model=model,
         activity_models={
             "requirements": _chapter_close_stub("req"),

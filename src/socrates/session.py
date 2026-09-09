@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
 from deepagents import (
     GeneralPurposeSubagentProfile,
@@ -15,6 +18,7 @@ from deepagents.backends import StateBackend
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, create_sub_agent
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -23,8 +27,18 @@ from socrates.coverage import (
     RECURSION_LIMIT_GENEROUS,
     BudgetAwareSubagent,
 )
-from socrates.conduction import CHAPTER, ConductionMiddleware
+from socrates.conduction import (
+    CHAPTER,
+    ConductionMiddleware,
+    read_conduction_state,
+    silence_redirect,
+)
 from socrates.model import ModelProvider
+from socrates.paths import (
+    DELIVERABLE_GLOSSARY_PATH,
+    DELIVERABLE_RULES_PATH,
+    DELIVERABLE_STRUCTURE_PATH,
+)
 from socrates.pipeline import (
     ACTIVITIES_IN_ORDER,
     ACTIVITY_SUBAGENT_TYPE,
@@ -146,13 +160,113 @@ def _build_activity_subagents(
     return subagents
 
 
+@dataclass(frozen=True)
+class _SnapshotRead:
+    """The read shape the conduction rules expect, over captured files."""
+
+    error: bool
+    file_data: dict[str, Any] | None
+
+
+class _SnapshotBackend:
+    """Read-only BackendProtocol view over a captured ``files`` state.
+
+    The loop-guard runs between graph runs, where a live ``StateBackend``
+    has no graph context — but the last result's ``files`` channel IS the
+    Model's filesystem (ADR-0001), so the derived conduction state reads
+    from the snapshot, not the backend.
+    """
+
+    def __init__(self, files: dict[str, Any] | None) -> None:
+        self._files = files or {}
+
+    def read(self, path: str) -> _SnapshotRead:
+        entry = self._files.get(path)
+        if entry is None:  # absent, or a deletion marker
+            return _SnapshotRead(error=True, file_data=None)
+        return _SnapshotRead(error=False, file_data=entry)
+
+
+def _deliverable_materialized(files: dict[str, Any] | None) -> bool:
+    """Whether an affirmative Satisfaction materialized the Conceptual
+    Domain Model — the derived terminated-by-Satisfaction fact (ADR-0001:
+    no separate ended-flag is persisted)."""
+    return any(
+        (files or {}).get(path) is not None
+        for path in (
+            DELIVERABLE_GLOSSARY_PATH,
+            DELIVERABLE_STRUCTURE_PATH,
+            DELIVERABLE_RULES_PATH,
+        )
+    )
+
+
+class OnlySinkSession:
+    """The compiled session wrapped in the only-sink loop-guard (D4).
+
+    The deepagents graph still finishes whenever the model stops calling
+    tools; this guard makes that stop a turn, not an end. After a silent
+    finish with no deliverable materialized, it re-injects the session
+    with a state redirect and continues — so the ``invoke`` the caller
+    sees returns at an interrupt or at a Satisfaction-ended session,
+    never at model silence.
+
+    ``reinjection_limit`` caps the consecutive silent re-injections per
+    invoke — an operational cost bound for environments that want one.
+    ``None`` (the default) is the invariant itself: the loop never ends
+    by silence.
+    """
+
+    def __init__(
+        self,
+        agent: CompiledStateGraph,
+        *,
+        reinjection_limit: int | None = None,
+    ) -> None:
+        self._agent = agent
+        self._reinjection_limit = reinjection_limit
+
+    @property
+    def checkpointer(self) -> BaseCheckpointSaver:
+        return self._agent.checkpointer
+
+    def get_state(self, config: Any) -> Any:
+        return self._agent.get_state(config)
+
+    def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> dict[str, Any]:
+        result = self._agent.invoke(input, config=config, **kwargs)
+        reinjections = 0
+        while (
+            not result.get("__interrupt__")
+            and not _deliverable_materialized(result.get("files"))
+            and (
+                self._reinjection_limit is None
+                or reinjections < self._reinjection_limit
+            )
+        ):
+            # The files snapshot is the Model's filesystem as this silent
+            # turn left it — the facts the redirect names the state from.
+            state = read_conduction_state(_SnapshotBackend(result.get("files")))
+            result = self._agent.invoke(
+                {
+                    "messages": [
+                        HumanMessage(content=json.dumps(silence_redirect(state)))
+                    ]
+                },
+                config=config,
+            )
+            reinjections += 1
+        return result
+
+
 def create_socrates_session(
     model: ModelProvider,
     *,
     backend: BackendProtocol | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     activity_models: Mapping[ModelingActivity, ModelProvider] | None = None,
-) -> CompiledStateGraph:
+    reinjection_limit: int | None = None,
+) -> OnlySinkSession:
     """Create a Socrates modeling session on deepagents.
 
     Args:
@@ -164,6 +278,9 @@ def create_socrates_session(
             Defaults to ``InMemorySaver``.
         activity_models: Optional per-activity model overrides (tests stub each
             Modeling Activity independently).
+        reinjection_limit: Cap on consecutive silent re-injections per invoke
+            by the only-sink loop-guard. ``None`` (default) never ends the
+            session by model silence.
     """
     _ensure_profiles_registered()
     fs = backend if backend is not None else StateBackend()
@@ -179,4 +296,5 @@ def create_socrates_session(
     )
     # Start generous (Coverage unknown / sparse). select_exploration_budget
     # and BudgetAwareSubagent refine the limit from FS signals during the run.
-    return agent.with_config({"recursion_limit": RECURSION_LIMIT_GENEROUS})
+    graph = agent.with_config({"recursion_limit": RECURSION_LIMIT_GENEROUS})
+    return OnlySinkSession(graph, reinjection_limit=reinjection_limit)

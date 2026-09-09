@@ -603,16 +603,39 @@ class InferenceEngine:
             self._save_conflicts(conflicts)
         return raised
 
-    def satisfaction_warning(self) -> dict[str, Any] | None:
+    def satisfaction_warning(
+        self,
+        *,
+        visiting: ModelingActivity | None = None,
+    ) -> dict[str, Any] | None:
         """Non-blocking, criticality-weighted warning for open deferred Conflicts.
 
         Entries are graded by structural load (ticket 16): weight descending —
         blast radius decides what is read first — with ties resolving to the
         Requirements side. Weighing is payload only: the Deferral
         recommendation stays boolean and the warning never blocks (ADR-0002).
+
+        Ticket 20: the warning also names the chapters never visited, so an
+        early Satisfaction (the door's third answer) is informed, never
+        surprised. Visited means begun or completed, derived from the
+        pipeline facts at read time (ADR-0001) — with nothing deferred and
+        every chapter visited there is nothing to warn about. ``visiting``
+        is the door's own activity when the warning is asked from a door:
+        the chapter whose door carries the question was self-evidently
+        visited, vacuous chapter or not (``begin`` only persists at close).
         """
         deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
-        if not deferred:
+        pipeline = PipelineStore(self._backend).snapshot()
+        completed = pipeline.get("completed", ())
+        active = pipeline.get("active")
+        never_visited = [
+            activity
+            for activity in ACTIVITIES_IN_ORDER
+            if activity not in completed
+            and activity != active
+            and activity != visiting
+        ]
+        if not deferred and not never_visited:
             return None
         entries: list[dict[str, Any]] = []
         for c in deferred:
@@ -641,6 +664,7 @@ class InferenceEngine:
             "kind": "deferred_conflicts",
             "blocking": False,
             "conflicts": entries,
+            "chapters_never_visited": never_visited,
         }
 
     def _apply_resolutions(

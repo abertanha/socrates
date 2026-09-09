@@ -184,7 +184,7 @@ def test_satisfaction_materializes_glossary_structure_rules():
         ]
     )
 
-    agent = create_socrates_session(model=model, activity_models=activity_models)
+    agent = create_socrates_session(model=model, activity_models=activity_models, reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -279,7 +279,7 @@ def test_non_affirmative_satisfaction_leaves_deliverable_unwritten():
         ]
     )
 
-    agent = create_socrates_session(model=model, activity_models=activity_models)
+    agent = create_socrates_session(model=model, activity_models=activity_models, reinjection_limit=0)
     config = _thread_config()
 
     agent.invoke(
@@ -344,7 +344,7 @@ def test_deliverable_draws_accepted_propositions_only():
         ]
     )
 
-    agent = create_socrates_session(model=model, activity_models=activity_models)
+    agent = create_socrates_session(model=model, activity_models=activity_models, reinjection_limit=0)
     config = _thread_config()
 
     agent.invoke(

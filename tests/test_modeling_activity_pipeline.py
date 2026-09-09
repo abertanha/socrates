@@ -162,6 +162,7 @@ def test_modeling_activity_pipeline_precedence_tags_and_conceptual_rules():
     )
 
     agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
         model=main_model,
         activity_models={
             "requirements": requirements_model,

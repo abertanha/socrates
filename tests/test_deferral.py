@@ -206,7 +206,7 @@ def test_deferral_criticality_reraise_and_satisfaction_warning():
             AIMessage(content="Closed with deferred conflicts warned."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -382,7 +382,7 @@ def test_l4_is_unavoidable_and_cannot_be_deferred():
             AIMessage(content="L4 remains open."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)
     config = _thread_config()
 
     opening = agent.invoke(

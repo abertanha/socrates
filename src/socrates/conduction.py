@@ -20,6 +20,12 @@ awaits the user; quiet-is-counting for the chapter door's declaration; and
 the orchestrator propose tag-gate (D6 "propose tag k"). All three are
 counting over persisted facts — never judgment (ADR-0002) — and all are
 derived at read time (ADR-0001: no new persisted fields).
+
+Ticket 20 adds the only-sink rules (D4/D6): `await_satisfaction` lives in
+the tail and in the door's third answer, nowhere else; and the silence
+redirect the outer loop-guard injects when the model stops without an
+affirmative Satisfaction — the session's end is a steering wheel, never
+model silence.
 """
 
 from __future__ import annotations
@@ -63,6 +69,7 @@ OPENING_TOOL = "run_opening"
 TASK_TOOL = "task"
 PROPOSE_TOOL = "propose_proposition"
 COMPLETE_TOOL = "complete_modeling_activity"
+SATISFACTION_TOOL = "await_satisfaction"
 
 # The pass/Probe pulse. Inside the chapters it is the specialist's own
 # regime; on the orchestrator surface it is admissible only in the tail
@@ -233,6 +240,22 @@ def conduction_check(
             reason=(
                 "the Opening runs exactly once and the Need is already "
                 "registered"
+            ),
+        )
+    if tool_name == SATISFACTION_TOOL and state.label != TAIL:
+        # D6: Satisfaction lives in the tail and in the door's third
+        # answer, nowhere else (D4 rejected Satisfaction-from-anywhere —
+        # it strands pending work behind an early exit).
+        return _redirect(
+            state,
+            tool_name,
+            args,
+            admissible_next=_chapter_walk_next(state),
+            reason=(
+                "Satisfaction lives in the tail and in the door's third "
+                "answer, nowhere else — the session is in "
+                f"{state.label}; continue the chapter walk, and each "
+                "door carries the question when its chapter is quiet"
             ),
         )
     if tool_name == PROPOSE_TOOL:
@@ -406,6 +429,42 @@ def _check_quiet(
 
 
 _TAIL_NEXT = "await_satisfaction"
+
+# The tail's other admissible move, named for the silence redirect: the
+# passes keep running wherever the Model still has ground to examine.
+_TAIL_PULSE_NEXT = "pass/Probe pulse (propose, lapidate, resolve)"
+
+
+def silence_redirect(state: ConductionState) -> dict[str, Any]:
+    """The loop-guard's re-injection payload (D4): when the model stops
+    without an affirmative Satisfaction, the session continues — this is
+    the redirect injected as the next turn, naming the state and the
+    admissible next steps (the same shape as every other redirect, so the
+    model's map back is one it already knows how to read)."""
+    if state.label == TAIL:
+        admissible_next = [_TAIL_NEXT, _TAIL_PULSE_NEXT]
+        reason = (
+            "the session ends only through the user's Satisfaction — "
+            "silence is not an end; ask via `await_satisfaction` or run "
+            "another pass over the Model"
+        )
+    else:
+        admissible_next = _chapter_walk_next(state)
+        reason = (
+            "the session ends only through the user's Satisfaction — "
+            "silence is not an end; continue with the admissible next "
+            "step (while chapters remain, the doors carry the "
+            "Satisfaction answer)"
+        )
+    return {
+        "ok": False,
+        "conduction": {
+            "state": state.label,
+            "attempted": "(silence — no tool call)",
+            "admissible_next": admissible_next,
+        },
+        "redirect": reason,
+    }
 
 
 def _chapter_walk_next(state: ConductionState) -> list[str]:

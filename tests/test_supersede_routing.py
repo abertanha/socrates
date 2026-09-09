@@ -229,7 +229,7 @@ def test_supersede_cascade_l1_inline_l3_blocked():
             AIMessage(content="Supersede routing pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -401,7 +401,7 @@ def test_l3_supersede_rejected_by_guardrail_routing():
             AIMessage(content="done"),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)
     config = _thread_config()
 
     r = agent.invoke({"messages": [HumanMessage("Start")]}, config=config)

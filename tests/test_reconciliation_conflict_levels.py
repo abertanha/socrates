@@ -274,6 +274,7 @@ def test_reconciliation_levels_and_scenario_skip():
         ]
     )
     agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
         model=model,
         activity_models={
             "requirements": _chapter_close_stub("req"),

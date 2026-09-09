@@ -241,7 +241,7 @@ def test_derivation_subtree_reads_central_and_leaf_reads_peripheral():
             AIMessage(content="Centrality read from the graph."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -376,7 +376,7 @@ def test_requirements_proposition_reads_central_from_first_moment():
             AIMessage(content="Requirements centrality observed."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -569,7 +569,7 @@ def test_centrality_recomputes_after_supersede_cascade():
             AIMessage(content="Recompute observed."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -806,7 +806,7 @@ def test_warning_ties_resolve_to_requirements_side():
             AIMessage(content="Tie observed."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)
     config = _thread_config()
 
     opening = agent.invoke(
@@ -923,7 +923,7 @@ def test_l4_stakes_decorated_but_never_gated():
             AIMessage(content="L4 stakes observed."),
         ]
     )
-    agent = create_socrates_session(model=model, activity_models=_close_stubs())
+    agent = create_socrates_session(model=model, activity_models=_close_stubs(), reinjection_limit=0)
     config = _thread_config()
 
     opening = agent.invoke(

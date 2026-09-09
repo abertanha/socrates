@@ -260,6 +260,7 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
     )
 
     agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
         model=main_model,
         activity_models={
             "requirements": requirements_model,
@@ -428,6 +429,7 @@ def test_l4_iteration_proposes_domain_for_entity_vs_behavior():
         ]
     )
     agent = create_socrates_session(
+        reinjection_limit=0,
         model=model,
         activity_models={
             "requirements": _chapter_close_stub("req"),
