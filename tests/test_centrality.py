@@ -1,18 +1,14 @@
 """Orchestration test for ticket 16 — Centrality signal + honest criticality reason.
 
-Seam: session orchestration with the model provider stubbed (ticket 14
-shape: close-only chapter specialists via ``activity_models``, then the
-orchestrator proposes in the tail, where it keeps the pulse). Covers: the
-Central Proposition signal (transitive derivation subtree in the
-``accepted_via`` graph ∨ Requirements activity, derived at assessment
-time and never stored), the honest ``central_proposition`` reason, the
-graded Satisfaction warning (weight descending, ties to the Requirements
-side), L4 stakes decoration (never gating), and recompute after a
-Supersede cascade.
-
-After ticket 17 lands, chapter closes become door interrupts —
-integration adapts ``_three_chapter_walk`` / ``_close_stubs`` in that one
-place.
+Seam: session orchestration with the model provider stubbed (tickets 14+17
+shape: close-only chapter specialists via ``activity_models`` — each closing
+through its door — then the orchestrator proposes in the tail, where it
+keeps the pulse). Covers: the Central Proposition signal (transitive
+derivation subtree in the ``accepted_via`` graph ∨ Requirements activity,
+derived at assessment time and never stored), the honest
+``central_proposition`` reason, the graded Satisfaction warning (weight
+descending, ties to the Requirements side), L4 stakes decoration (never
+gating), and recompute after a Supersede cascade.
 """
 
 from __future__ import annotations
@@ -112,6 +108,16 @@ def _close_stubs() -> dict:
         "domain_modeling": _chapter_close_stub("dom"),
         "behavioral_specification": _chapter_close_stub("beh"),
     }
+
+
+def _walk_doors(agent, config, r) -> dict:
+    """Answer "close" at each of the three chapter doors (ticket 17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = r["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        r = agent.invoke(Command(resume="close"), config=config)
+    return r
 
 
 def _accept_call(proposition_id: str, call_id: str, via: str = "") -> AIMessage:
@@ -246,6 +252,7 @@ def test_derivation_subtree_reads_central_and_leaf_reads_peripheral():
 
     r = agent.invoke(Command(resume=need), config=config)
     assert r["files"][NEED_PATH]["content"] == need
+    r = _walk_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)  # p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p2 via p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p3 via p2
@@ -377,6 +384,7 @@ def test_requirements_proposition_reads_central_from_first_moment():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _walk_doors(agent, config, r)
 
     probe = r["__interrupt__"][0].value
     assert probe["kind"] == "probe"
@@ -569,6 +577,7 @@ def test_centrality_recomputes_after_supersede_cascade():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _walk_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)  # p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p2 via p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p3 via p2
@@ -805,6 +814,7 @@ def test_warning_ties_resolve_to_requirements_side():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _walk_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)  # p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p2 via p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p3
@@ -921,6 +931,7 @@ def test_l4_stakes_decorated_but_never_gated():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _walk_doors(agent, config, r)
     r = agent.invoke(Command(resume="yes"), config=config)  # p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p2 via p1
     r = agent.invoke(Command(resume="yes"), config=config)  # p3
