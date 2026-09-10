@@ -33,13 +33,16 @@ CONDUCTION_TERMS = (
 )
 
 # The retired discipline's distinctive order-imperatives — none of these
-# may survive into the advisory persona.
+# may survive into the advisory persona. Item 4's pulse-ordering prose is
+# pinned by its own phrases, not only by the no-`call `` ` check.
 RETIRED_DISCIPLINE_PHRASES = (
     "Session discipline",
     "Call `run_opening` first",
     "Run the three Modeling Activities in precedence",
     "Do not skip or reorder",
     "On the user's signal",
+    "`select_exploration_budget` first",
+    "From pass 2 call `reconcile` first",
     "Call `await_satisfaction`",
     "When Satisfaction is recorded, stop",
 )
@@ -77,6 +80,10 @@ def test_system_prompt_is_advisory_about_the_conduction() -> None:
     # Advisory, not commanding: the prompt never issues a tool-order
     # imperative (the conduction's redirects do that, at dispatch time).
     assert "call `" not in flat
+    # The prompt names the conduct terms inline; its list cannot drift from
+    # the glossary's term set (the one enforced vocabulary, per the register).
+    for term in CONDUCTION_TERMS:
+        assert term.casefold() in flat, f"conduct term missing from prompt: {term!r}"
 
 
 def test_conduction_terms_land_in_the_glossary_at_concept_level() -> None:
@@ -99,6 +106,8 @@ def test_adr_0005_records_the_decision_and_evolution_path() -> None:
     assert "the harness conducts" in lowered
     assert "never lives in a prompt" in lowered
     # The mechanism and the rejected alternative recorded as evolution path.
-    assert "state-governed" in lowered or "governed surface" in lowered
+    # Pin the mechanism by its exact name — a disjunctive assertion would let
+    # either half silently vanish.
+    assert "state-governed tool surface" in lowered
     assert "node graph" in lowered
     assert "evolution path" in lowered

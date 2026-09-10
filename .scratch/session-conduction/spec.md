@@ -79,3 +79,7 @@ The harness conducts; the model asks. The session's order becomes enforced state
 - The interview's language protocol (three registers; no term migrates without decision) and the full decision record D1–D8 live in the feature's context file; tickets should reference both.
 - Glossary groundings the decisions lean on, verbatim: Probe — "Resolving a Conflict can reveal new ground, so each Probe both de-conflicts and grows the Model." Iteration — "The harness proposes the phase; the user confirms." Batch — "the user clarifies every Conflict in it before the next pass runs."
 - Interview jargon deliberately not promoted: chapter, treadmill, valve, tail, steering wheel — names for decisions, not domain terms.
+
+## Amendments
+
+- **2026-09-09, user ruling (ticket 21)**: the Registration decision's "no glossary term is added" is superseded for exactly six conduction terms — *chapter*, *door*, *quiet*, *lapidate*, *treadmill*, *valve* — which landed in CONTEXT.md at concept level, because they are load-bearing in user-facing strings (redirect reasons, prompts) and the register is where the harness's own vocabulary lives. *Tail* and *steering wheel* remain un-promoted, per the same ruling. Everything else the Registration decision holds — no other term added, no existing term's text changed, ADR-0001..0004 untouched — stands.

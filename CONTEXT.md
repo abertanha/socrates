@@ -85,7 +85,7 @@ The user-confirmed close of a chapter. The model declares the chapter complete o
 _Avoid_: Gate (implies a quality bar), checkpoint, milestone
 
 **Quiet**:
-The counting a chapter must show before its door may open: every Proposition born in the chapter has been through at least one pass, and no Batch awaits the user on any ground. Bookkeeping, never judgment — quiet says the ground was examined, not that it is good (ADR-0002). Deferred Conflicts never make a chapter unquiet.
+The counting a chapter must show before its door may open: every Proposition born in the chapter has been through at least one pass, and no Batch awaits the user on any ground. Bookkeeping, never judgment — quiet says the ground was examined, not that it is good (ADR-0002). Deferred Conflicts never make a chapter unquiet. A different quiet from the Notification policy's ordinary word ("Socrates is quiet by default" — no interruptions): that quiet is silence toward the user; this Quiet is a chapter's counting.
 _Avoid_: Done, stable, "good enough" (quality judgments)
 
 **Lapidate**:
