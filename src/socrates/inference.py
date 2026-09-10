@@ -24,7 +24,7 @@ from socrates.paths import (
     SCENARIOS_PATH,
 )
 from socrates.coverage import CoverageStore
-from socrates.need import read_need
+from socrates.need import read_amendments, read_need
 from socrates.notifications import NotificationService, is_unavoidable
 from socrates.pipeline import ACTIVITIES_IN_ORDER, ModelingActivity, PipelineStore
 from socrates.proposition import Proposition, PropositionStore, normalize_statement
@@ -618,13 +618,20 @@ class InferenceEngine:
         Ticket 20: the warning also names the chapters never visited, so an
         early Satisfaction (the door's third answer) is informed, never
         surprised. Visited means begun or completed, derived from the
-        pipeline facts at read time (ADR-0001) — with nothing deferred and
-        every chapter visited there is nothing to warn about. ``visiting``
+        pipeline facts at read time (ADR-0001). ``visiting``
         is the door's own activity when the warning is asked from a door:
         the chapter whose door carries the question was self-evidently
         visited, vacuous chapter or not (``begin`` only persists at close).
+
+        Ticket 23 / spec `need-refinement`: the session's Need amendments
+        ride alongside — an early close is informed about the Relevance
+        Filter's history, not just its conflicts. The amendments are read
+        from the Need file's record at read time (ADR-0001) and count in
+        the emptiness rule: with them on record there is something to say
+        even with nothing deferred.
         """
         deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
+        amendments = read_amendments(self._backend)
         pipeline = PipelineStore(self._backend).snapshot()
         completed = pipeline.get("completed", ())
         active = pipeline.get("active")
@@ -635,7 +642,7 @@ class InferenceEngine:
             and activity != active
             and activity != visiting
         ]
-        if not deferred and not never_visited:
+        if not deferred and not never_visited and not amendments:
             return None
         entries: list[dict[str, Any]] = []
         for c in deferred:
@@ -665,6 +672,7 @@ class InferenceEngine:
             "blocking": False,
             "conflicts": entries,
             "chapters_never_visited": never_visited,
+            "amendments": amendments,
         }
 
     def _apply_resolutions(

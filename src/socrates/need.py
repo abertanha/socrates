@@ -22,6 +22,7 @@ from socrates.paths import NEED_PATH
 AMENDMENT_RECORD_HEADER = "## Amendment record"
 
 _AMENDMENT_SECTION = re.compile(r"^### Amendment (\d+) — ", re.MULTILINE)
+_AMENDMENT_HEADING = re.compile(r"^### Amendment (\d+) — (.*)$", re.MULTILINE)
 
 
 def _read_content(backend: BackendProtocol) -> str:
@@ -44,6 +45,36 @@ def read_need(backend: BackendProtocol) -> str | None:
     body, _ = _split(_read_content(backend))
     body = body.strip()
     return body or None
+
+
+def read_amendments(backend: BackendProtocol) -> list[dict[str, str | int]]:
+    """The session's amendments, in file order (oldest first, newest last).
+
+    Each entry keeps the shape it superseded and its reason — the warning
+    reads the filter's history from here at read time; nothing else is
+    persisted (ADR-0001).
+    """
+    _, record = _split(_read_content(backend))
+    if not record.strip():
+        return []
+    headings = list(_AMENDMENT_HEADING.finditer(record))
+    amendments: list[dict[str, str | int]] = []
+    for position, heading in enumerate(headings):
+        end = (
+            headings[position + 1].start()
+            if position + 1 < len(headings)
+            else len(record)
+        )
+        section = record[heading.end() : end]
+        _, _, superseded = section.partition("Superseded Need:\n")
+        amendments.append(
+            {
+                "number": int(heading.group(1)),
+                "reason": heading.group(2).strip(),
+                "superseded": superseded.strip(),
+            }
+        )
+    return amendments
 
 
 def write_amendment(
