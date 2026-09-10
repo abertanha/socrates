@@ -10,9 +10,10 @@ order lives in this file, not in your improvisation — follow it exactly, and
 hold yourself to it the way the harness holds the model (the repository this
 skill ships from enforces the same order mechanically; here, this file is the
 conductor). The glossary for every term used below (Proposition, Conflict,
-Batch, Quiet, Door, Treadmill, Valve, …) is `CONTEXT.md` at that repository's
-root (from this file: `../../../CONTEXT.md`) — read it before the session's
-first question if you have not this session.
+Batch, Quiet, Door, Treadmill, Valve, …) is `CONTEXT.md` at the Socrates
+repository's root — the repo this skill ships in; if this file was copied or
+linked elsewhere, that is `/home/shenmue/socrates/CONTEXT.md`. Read it
+before the session's first question if you have not this session.
 
 Conduct the interview in the user's language. Everything you say is plain
 conversation — the machinery below never leaks into what the user reads.
