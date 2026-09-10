@@ -52,3 +52,41 @@ even with nothing deferred; the payload gains `amendments` beside
   at both seams (orchestration + direct composer) so a future regression
   cannot ship the superseded shapes or leak the record into the
   deliverable.
+
+### Review (two-axis, post-commit)
+
+Fixed from the review:
+
+- **Multi-line reasons were truncated in the payload** (spec axis,
+  CONFIRMED): the heading grammar is single-line, and the writer
+  interpolated the raw reason — a reason with a newline survived in the
+  file but dropped everything past the first line from the warning
+  payload ("reasons always survive" read whole). `write_amendment` now
+  collapses the reason to one line; pinned by the writer→reader
+  round-trip `test_multiline_reason_survives_whole_in_the_payload`
+  (which also pins that numbering still reads the sanitized record).
+- **Tail path with amendments untested** (spec axis coverage gap): the
+  grounding orchestration test drives the tail's `await_satisfaction`,
+  so it now also asserts the warning there carries the amendments —
+  same `_ask_satisfaction`, both ask-paths covered.
+- **Standards axis**: the heading grammar lived in two regexes
+  (`_AMENDMENT_SECTION` write-side deleted; `_AMENDMENT_HEADING` is the
+  single home) and the `"Superseded Need:"` marker is now a constant
+  shared by write and read; the avoid-word bare "filter" rephrased to
+  "Relevance Filter" (docstring + test comments, CONTEXT.md's Relevance
+  Filter entry); the dead `_tool_result` helper deleted; `-> None`
+  aligned across the suite's tests.
+
+Recorded rulings (both axes flagged; kept deliberately):
+
+- **The emptiness-rule flip stays, watch the tail** (spec axis: the
+  ticket's framing is "an early close is informed", but the flip fires
+  at non-early closes too — a fully complete, nothing-deferred session
+  that closes at the tail now always gets a warning listing its
+  amendments). Same family as ticket 20's kept "L4-reopen overwarning":
+  conservative, directionally right, never blocking (ADR-0002) — the
+  close's honest picture includes the Relevance Filter's history, and
+  the user already confirmed each amendment at its own interrupt, so
+  the warning re-surfaces rather than surprises. Watch in the first
+  real-model session: if the tail warning reads as noise, restrict the
+  flip to not-all-chapters-completed states.

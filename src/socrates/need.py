@@ -21,8 +21,11 @@ from socrates.paths import NEED_PATH
 # is what consumers read; the record below it is audit, never filter.
 AMENDMENT_RECORD_HEADER = "## Amendment record"
 
-_AMENDMENT_SECTION = re.compile(r"^### Amendment (\d+) — ", re.MULTILINE)
 _AMENDMENT_HEADING = re.compile(r"^### Amendment (\d+) — (.*)$", re.MULTILINE)
+
+# The section marker below each heading (write and read share it — the
+# format has one home).
+_SUPERSEDED_MARKER = "Superseded Need:"
 
 
 def _read_content(backend: BackendProtocol) -> str:
@@ -51,8 +54,8 @@ def read_amendments(backend: BackendProtocol) -> list[dict[str, str | int]]:
     """The session's amendments, in file order (oldest first, newest last).
 
     Each entry keeps the shape it superseded and its reason — the warning
-    reads the filter's history from here at read time; nothing else is
-    persisted (ADR-0001).
+    reads the Relevance Filter's history from here at read time; nothing
+    else is persisted (ADR-0001).
     """
     _, record = _split(_read_content(backend))
     if not record.strip():
@@ -66,7 +69,7 @@ def read_amendments(backend: BackendProtocol) -> list[dict[str, str | int]]:
             else len(record)
         )
         section = record[heading.end() : end]
-        _, _, superseded = section.partition("Superseded Need:\n")
+        _, _, superseded = section.partition(f"{_SUPERSEDED_MARKER}\n")
         amendments.append(
             {
                 "number": int(heading.group(1)),
@@ -85,18 +88,21 @@ def write_amendment(
     """Rewrite the Need, recording the amendment beneath it (newest last).
 
     The superseded shape and the reason join any earlier amendments — the
-    record grows append-only; the body becomes the new Need alone.
+    record grows append-only; the body becomes the new Need alone. The
+    reason is single-line (the heading grammar is one line, and the
+    warning payload reads it from there — reasons always survive whole).
     """
     content = _read_content(backend)
     body, record = _split(content)
     superseded = body.strip()
-    numbers = [int(n) for n in _AMENDMENT_SECTION.findall(record)]
+    numbers = [int(m.group(1)) for m in _AMENDMENT_HEADING.finditer(record)]
     number = max(numbers) + 1 if numbers else 1
 
+    reason = " ".join(reason.split())
     sections = record.strip()
     section = (
         f"### Amendment {number} — {reason}\n\n"
-        f"Superseded Need:\n\n{superseded}\n"
+        f"{_SUPERSEDED_MARKER}\n\n{superseded}\n"
     )
     record_body = f"{sections}\n\n{section}" if sections else section
     backend.write(

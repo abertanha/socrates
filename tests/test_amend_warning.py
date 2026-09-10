@@ -13,7 +13,7 @@ import json
 import uuid
 
 from deepagents.backends.filesystem import FilesystemBackend
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
 from socrates import StubChatModel, create_socrates_session
@@ -38,13 +38,6 @@ def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
         content="",
         tool_calls=[{"name": name, "args": args, "id": call_id, "type": "tool_call"}],
     )
-
-
-def _tool_result(messages: list, call_id: str) -> dict:
-    for m in messages:
-        if isinstance(m, ToolMessage) and m.tool_call_id == call_id:
-            return json.loads(m.content)
-    raise AssertionError(f"no ToolMessage with id {call_id}")
 
 
 def _chapter_close_stub(label: str) -> StubChatModel:
@@ -85,7 +78,7 @@ def _record_scenarios_call(proposition_id: str, prefix: str, call_id: str) -> AI
 # ---------------------------------------------------------- orchestration
 
 
-def test_amendments_ride_to_the_satisfaction_warning_alongside_conflicts():
+def test_amendments_ride_to_the_satisfaction_warning_alongside_conflicts() -> None:
     """The warning is the early close's honest picture: the session's Need
     amendments with their reasons ride alongside the weighted deferred
     Conflicts and the chapters never visited — never a block."""
@@ -178,7 +171,8 @@ def test_amendments_ride_to_the_satisfaction_warning_alongside_conflicts():
     warning = satisfaction["deferred_warning"]
     assert warning is not None
     assert warning["blocking"] is False
-    # Both histories ride: the parked Conflict and the filter's amendment.
+    # Both histories ride: the parked Conflict and the Relevance Filter's
+    # amendment.
     assert [c["id"] for c in warning["conflicts"]] == ["c1"]
     assert warning["amendments"] == [
         {
@@ -195,7 +189,7 @@ def test_amendments_ride_to_the_satisfaction_warning_alongside_conflicts():
     assert DELIVERABLE_GLOSSARY_PATH not in finished["files"]
 
 
-def test_deliverable_after_amendments_grounded_in_the_final_need():
+def test_deliverable_after_amendments_grounded_in_the_final_need() -> None:
     """What ships reflects the last thing agreed: the materialized
     deliverable grounds in the final Need — never the superseded shapes,
     never the record."""
@@ -278,6 +272,13 @@ def test_deliverable_after_amendments_grounded_in_the_final_need():
 
     satisfaction = r["__interrupt__"][0].value
     assert satisfaction["kind"] == "satisfaction"
+    # The tail path carries the amendments too — the same warning reaches
+    # the close wherever it is asked from (the ride test covers the door).
+    tail_warning = satisfaction["deferred_warning"]
+    assert tail_warning is not None
+    assert tail_warning["amendments"][0]["reason"] == reason
+    assert tail_warning["blocking"] is False
+
     finished = agent.invoke(Command(resume="yes"), config=config)
     assert finished.get("__interrupt__") is None
 
@@ -292,11 +293,40 @@ def test_deliverable_after_amendments_grounded_in_the_final_need():
 # ---------------------------------------------------------------- direct
 
 
+def test_multiline_reason_survives_whole_in_the_payload(tmp_path) -> None:
+    """Reasons always survive — the writer makes the reason single-line
+    (the heading grammar is one line), so the warning payload reads it
+    whole instead of truncating at the first newline."""
+    backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=True)
+    backend.write(NEED_PATH, "The first Need.")
+    from socrates.need import read_amendments, write_amendment
+
+    write_amendment(
+        backend,
+        "The reshaped Need.",
+        "The first answer was raw.\nThe deliverable is broader than said.",
+    )
+    amendments = read_amendments(backend)
+    assert amendments == [
+        {
+            "number": 1,
+            "reason": (
+                "The first answer was raw. The deliverable is broader "
+                "than said."
+            ),
+            "superseded": "The first Need.",
+        }
+    ]
+    # A second amendment still numbers off the (single-line) record.
+    write_amendment(backend, "The final Need.", "One more sharpening.")
+    assert [a["number"] for a in read_amendments(backend)] == [1, 2]
+
+
 def test_amendments_alone_make_the_warning_worth_showing(tmp_path) -> None:
-    """The emptiness rule counts the filter's history: with amendments on
-    record the warning is not None even with nothing deferred and every
-    chapter visited — and the flip side holds: the same facts without
-    amendments warn nothing."""
+    """The emptiness rule counts the Relevance Filter's history: with
+    amendments on record the warning is not None even with nothing
+    deferred and every chapter visited — and the flip side holds: the
+    same facts without amendments warn nothing."""
     backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=True)
     backend.write(
         PIPELINE_PATH,
@@ -341,7 +371,7 @@ def test_amendments_alone_make_the_warning_worth_showing(tmp_path) -> None:
 
 def test_deliverable_grounds_in_the_body_not_the_record(tmp_path) -> None:
     """The composer reads the live Need through the same one home as every
-    consumer — an amended Need file ships the final filter."""
+    consumer — an amended Need file ships the final agreed Need."""
     backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=True)
     backend.write(
         NEED_PATH,
