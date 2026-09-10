@@ -20,7 +20,12 @@ from langgraph.types import Command
 
 from socrates import StubChatModel, create_socrates_session
 from socrates.conduction import ConductionState, conduction_check, read_conduction_state
-from socrates.paths import NEED_PATH, PIPELINE_PATH, SCENARIOS_PATH
+from socrates.paths import (
+    NEED_PATH,
+    PIPELINE_PATH,
+    PROPOSITIONS_PATH,
+    SCENARIOS_PATH,
+)
 from socrates.pipeline import PipelineStore
 
 _ALL_COMPLETED = (
@@ -321,6 +326,142 @@ def test_amend_redirected_after_requirements_closes_names_iteration():
     assert finished["files"][NEED_PATH]["content"] == original
     pipeline = json.loads(finished["files"][PIPELINE_PATH]["content"])
     assert pipeline["completed"] == ["requirements"]
+
+
+def test_blank_amendment_is_refused_and_never_interrupts():
+    """A mis-shaped proposal never reaches the user (US4 read strictly):
+    an empty shape or an empty reason is refused before the interrupt —
+    confirming a void shape would corrupt the Need's body."""
+    original = "A chatbot to assist lawyers."
+    model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "open"),
+            _tool_call(
+                "amend_need",
+                {"proposed_need": "   ", "reason": "An empty shape."},
+                "amend-blank-need",
+            ),
+            _tool_call(
+                "amend_need",
+                {"proposed_need": "A reshaped Need.", "reason": "  "},
+                "amend-blank-reason",
+            ),
+            AIMessage(content="Neither proposal was well-shaped."),
+        ],
+        label="main",
+    )
+    agent = create_socrates_session(model=model, reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
+    config = _thread_config()
+
+    r = agent.invoke({"messages": [HumanMessage(content="Start")]}, config=config)
+    assert r["__interrupt__"][0].value["kind"] == "opening"
+    # No amendment interrupt ever fires — both refusals returned to the
+    # model as tool results, and the session ran on to its scripted end.
+    finished = agent.invoke(Command(resume=original), config=config)
+    assert finished.get("__interrupt__") is None
+
+    blank_need = _tool_result(finished["messages"], "amend-blank-need")
+    assert blank_need["ok"] is False
+    assert "reshaped Need" in blank_need["error"]
+    blank_reason = _tool_result(finished["messages"], "amend-blank-reason")
+    assert blank_reason["ok"] is False
+    assert finished["files"][NEED_PATH]["content"] == original
+
+
+def test_amendment_never_touches_recorded_ground():
+    """US8: recorded Scenarios and Acceptances are the user's decisions —
+    an amendment (here, mid-chapter with Requirements begun) rewrites the
+    Need alone; the Model's recorded ground stands untouched."""
+    original = "A chatbot to assist lawyers."
+    amended = "A chatbot that assembles the complete legal basis for a civil action."
+    reason = "The first answer was too broad to filter with."
+
+    requirements_model = StubChatModel(
+        responses=[
+            _tool_call(
+                "propose_proposition",
+                {"statement": "The basis draws on the hierarchy of legal sources."},
+                "req-propose",
+            ),
+            _tool_call(
+                "record_scenarios",
+                {
+                    "proposition_id": "p1",
+                    "scenarios_json": json.dumps(
+                        [
+                            {
+                                "description": "hierarchy edge one",
+                                "edge": "one",
+                                "need_relevant": True,
+                            },
+                            {
+                                "description": "hierarchy edge many",
+                                "edge": "many",
+                                "need_relevant": True,
+                            },
+                        ]
+                    ),
+                },
+                "req-scenarios",
+            ),
+            AIMessage(content="Still working on the Need."),
+        ],
+        label="req",
+    )
+    model = StubChatModel(
+        responses=[
+            _tool_call("run_opening", {}, "open"),
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Requirements."},
+                "task-req",
+            ),
+            _tool_call(
+                "amend_need",
+                {"proposed_need": amended, "reason": reason},
+                "amend",
+            ),
+            AIMessage(content="Need sharpened mid-chapter."),
+        ],
+        label="main",
+    )
+    agent = create_socrates_session(
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
+        model=model,
+        activity_models={"requirements": requirements_model},
+    )
+    config = _thread_config()
+
+    r = agent.invoke({"messages": [HumanMessage(content="Start")]}, config=config)
+    assert r["__interrupt__"][0].value["kind"] == "opening"
+    r = agent.invoke(Command(resume=original), config=config)
+
+    # The chapter is open (Requirements begun) — the amendment compares.
+    amendment = r["__interrupt__"][0].value
+    assert amendment["kind"] == "amend_need"
+    assert amendment["current_need"] == original
+    finished = agent.invoke(Command(resume="yes"), config=config)
+    assert finished.get("__interrupt__") is None
+
+    # The Need moved — and nothing else did.
+    content = finished["files"][NEED_PATH]["content"]
+    body, separator, record = content.partition("\n## Amendment record\n")
+    assert separator
+    assert body.strip() == amended
+    assert original in record
+
+    scenarios = json.loads(finished["files"][SCENARIOS_PATH]["content"])[
+        "scenarios"
+    ]
+    assert [s["description"] for s in scenarios] == [
+        "hierarchy edge one",
+        "hierarchy edge many",
+    ]
+    propositions = json.loads(
+        finished["files"][PROPOSITIONS_PATH]["content"]
+    )["propositions"]
+    assert [p["id"] for p in propositions] == ["p1"]
+    assert propositions[0]["status"] == "candidate"
 
 
 def test_scenarios_recorded_after_an_amendment_run_under_the_new_need():

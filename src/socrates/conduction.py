@@ -268,15 +268,7 @@ def conduction_check(
             ),
         )
     if tool_name == AMEND_TOOL:
-        # Ticket 22 / spec `need-refinement`: the Need is amendable only
-        # while the Requirements chapter is open — its first pass (begun,
-        # or next in precedence with nothing completed), or a reopening
-        # through Iteration (the same facts shape: active Requirements,
-        # nothing downstream completed).
-        if state.active == "requirements" or (
-            state.active is None
-            and state.expected_activity == "requirements"
-        ):
+        if _requirements_open(state):
             return None
         return _redirect(
             state,
@@ -460,6 +452,18 @@ def _check_quiet(
             ),
         )
     return None
+
+
+def _requirements_open(state: ConductionState) -> bool:
+    """Ticket 22 ruling: "Requirements open" covers both first-pass shapes
+    — the chapter begun, and post-Opening next-in-precedence before
+    anything begins (where the Opening's raw first answer most needs
+    sharpening) — plus the Iteration reopening, which re-enters the same
+    facts shape (active Requirements, nothing downstream completed)."""
+    return state.active == "requirements" or (
+        state.active is None
+        and state.expected_activity == "requirements"
+    )
 
 
 _TAIL_NEXT = "await_satisfaction"

@@ -276,7 +276,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
     @tool
     def amend_need(proposed_need: str, reason: str) -> str:
-        """Propose reshaping the Need — the filter judging every Proposition.
+        """Propose reshaping the Need — the Relevance Filter judging every Proposition.
 
         Admitted while the Requirements chapter is open. The user confirms at
         an interrupt comparing the current Need with the proposed one; on
@@ -284,6 +284,18 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         it (the superseded shape and the reason survive, newest last). A
         declined amendment leaves the Need exactly as it was.
         """
+        if not proposed_need.strip() or not reason.strip():
+            # A mis-shaped proposal never reaches the user: an empty shape
+            # confirmed would corrupt the artifact (US4 read strictly).
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "An amendment needs both a reshaped Need and a "
+                        "reason"
+                    ),
+                }
+            )
         current = read_need(backend)
         if current is None:
             # Defensive: the conduction governor redirects pre-Opening

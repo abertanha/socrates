@@ -50,7 +50,7 @@ def write_amendment(
     backend: BackendProtocol,
     new_need: str,
     reason: str,
-) -> str:
+) -> None:
     """Rewrite the Need, recording the amendment beneath it (newest last).
 
     The superseded shape and the reason join any earlier amendments — the
@@ -60,18 +60,17 @@ def write_amendment(
     body, record = _split(content)
     superseded = body.strip()
     numbers = [int(n) for n in _AMENDMENT_SECTION.findall(record)]
-    index = max(numbers) + 1 if numbers else 1
+    number = max(numbers) + 1 if numbers else 1
 
     sections = record.strip()
     section = (
-        f"### Amendment {index} — {reason}\n\n"
+        f"### Amendment {number} — {reason}\n\n"
         f"Superseded Need:\n\n{superseded}\n"
     )
     record_body = f"{sections}\n\n{section}" if sections else section
-    new_content = (
+    backend.write(
+        NEED_PATH,
         f"{new_need.strip()}\n\n"
         f"{AMENDMENT_RECORD_HEADER}\n\n"
-        f"{record_body}"
+        f"{record_body}",
     )
-    backend.write(NEED_PATH, new_content)
-    return new_content

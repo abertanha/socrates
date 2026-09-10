@@ -64,3 +64,48 @@ the grounding; both were previously duplicated raw reads, now one home).
   "amend")` — yes/confirm/ok/true (+ `yes…` prefix). No polarity word
   exists for an amendment, so no action-specific set was added;
   English-only per the deferred bilingual ruling.
+
+### Review (two-axis, post-commit)
+
+Fixed from the review:
+
+- **A blank confirmed amendment corrupted the Need** (spec axis,
+  CONFIRMED): `amend_need` validated neither argument — an empty
+  `proposed_need` confirmed would rewrite the file to an empty body,
+  `read_need` → `None`, and Scenario recording would die on the Need
+  requirement. US4 read strictly: a mis-shaped proposal never reaches
+  the user. Guard added (both the shape and the reason must be
+  non-blank), pinned by
+  `test_blank_amendment_is_refused_and_never_interrupts`.
+- **US8 unpinned** (spec axis): "recorded Scenarios and Acceptances
+  stand untouched" held by construction but had no test.
+  `test_amendment_never_touches_recorded_ground` pins it — Scenarios'
+  descriptions and the Proposition's status byte-stable across a
+  mid-chapter amendment (which also pins begun-chapter admission at the
+  orchestration seam).
+- **Standards axis**: `write_amendment` returned a string no caller
+  read (`-> None`); the next-amendment `index` renamed `number`; the
+  admissibility predicate extracted as `_requirements_open` (the ruling
+  now lives in code, not comments); the tool docstring says "the
+  Relevance Filter" (CONTEXT.md's avoid-word is a bare "filter").
+
+Recorded rulings (both axes flagged; kept deliberately):
+
+- **The pre-begin admission arm stays** (spec axis: scope creep): the
+  spec's written line is "the Requirements chapter is open — its first
+  pass, or a reopening through Iteration", and between-chapters
+  post-Opening is strictly neither. US1 is the founding scenario ("sharpen
+  the Need after the Opening's first raw answer") and the harness's
+  single-shot Opening lands exactly there; the Iteration reopen re-enters
+  the identical facts shape. Adjudicated here, in the ticket.
+- **Test duplication suppressed** (standards axis): the Opening preamble,
+  the guard comment, and the on-disk separator literal repeat across the
+  suite — matching the house style of every existing orchestration suite
+  (the repo overrides the baseline), and the literal
+  `"\n## Amendment record\n"` in tests deliberately pins the file format
+  against accidental drift.
+- **Shared FS-read helper deferred** (standards axis):
+  `need._read_content` re-creates the `result.error /
+  file_data["content"]` unpack that `conduction._read_json` already has —
+  a cross-module `fs` helper wants to be born; noted for a cleanup pass,
+  not worth churning beyond this ticket's blast radius.
