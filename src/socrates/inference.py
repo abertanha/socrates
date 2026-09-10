@@ -19,12 +19,12 @@ from socrates.paths import (
     BATCHES_PATH,
     CONFLICTS_PATH,
     INFERENCE_STATE_PATH,
-    NEED_PATH,
     NOTIFICATIONS_PATH,
     PROPOSITIONS_PATH,
     SCENARIOS_PATH,
 )
 from socrates.coverage import CoverageStore
+from socrates.need import read_need
 from socrates.notifications import NotificationService, is_unavoidable
 from socrates.pipeline import ACTIVITIES_IN_ORDER, ModelingActivity, PipelineStore
 from socrates.proposition import Proposition, PropositionStore, normalize_statement
@@ -953,10 +953,9 @@ class InferenceEngine:
         }
 
     def _require_need(self) -> str:
-        result = self._backend.read(NEED_PATH)
-        if result.error or result.file_data is None:
-            raise ValueError("Need must be persisted before generating Scenarios")
-        need = result.file_data["content"].strip()
+        # The live Need — the file's body, never its amendment record
+        # (ticket 22: the filter is amendable; the record is audit).
+        need = read_need(self._backend)
         if not need:
             raise ValueError("Need must be persisted before generating Scenarios")
         return need

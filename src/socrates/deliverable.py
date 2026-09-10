@@ -24,8 +24,8 @@ from socrates.paths import (
     DELIVERABLE_GLOSSARY_PATH,
     DELIVERABLE_RULES_PATH,
     DELIVERABLE_STRUCTURE_PATH,
-    NEED_PATH,
 )
+from socrates.need import read_need
 from socrates.proposition import Proposition, PropositionStore
 
 # Technologies / delivery channels / implementation artifacts (CONTEXT
@@ -152,8 +152,6 @@ class DeliverableComposer:
         return contents
 
     def _read_need(self) -> str | None:
-        result = self._backend.read(NEED_PATH)
-        if result.error or result.file_data is None:
-            return None
-        content = result.file_data["content"]
-        return content if content.strip() else None
+        # The live Need — the file's body, never its amendment record
+        # (ticket 22: what ships reflects the last thing agreed).
+        return read_need(self._backend)

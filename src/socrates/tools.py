@@ -18,6 +18,7 @@ from socrates.opening import (
     render_opening,
 )
 from socrates.paths import NEED_PATH
+from socrates.need import read_need, write_amendment
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore
 from socrates.inference import InferenceEngine
@@ -274,6 +275,49 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         return _ask_satisfaction(inference, deliverable)
 
     @tool
+    def amend_need(proposed_need: str, reason: str) -> str:
+        """Propose reshaping the Need — the filter judging every Proposition.
+
+        Admitted while the Requirements chapter is open. The user confirms at
+        an interrupt comparing the current Need with the proposed one; on
+        confirmation the Need is rewritten with the amendment recorded beneath
+        it (the superseded shape and the reason survive, newest last). A
+        declined amendment leaves the Need exactly as it was.
+        """
+        current = read_need(backend)
+        if current is None:
+            # Defensive: the conduction governor redirects pre-Opening
+            # attempts, so an absent Need here is a race, not a path.
+            return json.dumps(
+                {"ok": False, "error": "No Need is registered to amend yet"}
+            )
+        answer = interrupt(
+            {
+                "kind": "amend_need",
+                "current_need": current,
+                "proposed_need": proposed_need,
+                "reason": reason,
+                "question": (
+                    f"Reason: {reason}. Reshape what we're building to "
+                    "the proposed shape?"
+                ),
+            }
+        )
+        if not _is_confirmed(answer, "amend"):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "declined": True,
+                    "error": (
+                        "User declined the Need amendment; the Need stays "
+                        "as it is"
+                    ),
+                }
+            )
+        write_amendment(backend, proposed_need, reason)
+        return json.dumps({"ok": True, "need_path": NEED_PATH})
+
+    @tool
     def propose_proposition(statement: str, activity: ModelingActivity) -> str:
         """Propose a Proposition tagged with the Modeling Activity that produced it."""
         try:
@@ -365,6 +409,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     return [
         run_opening,
         await_satisfaction,
+        amend_need,
         propose_proposition,
         accept_proposition,
         reject_proposition,

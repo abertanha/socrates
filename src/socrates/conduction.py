@@ -26,6 +26,14 @@ the tail and in the door's third answer, nowhere else; and the silence
 redirect the outer loop-guard injects when the model stops without an
 affirmative Satisfaction — the session's end is a steering wheel, never
 model silence.
+
+Ticket 22 / spec `need-refinement` adds the Need amendment gate:
+`amend_need` is admitted only while the Requirements chapter is open —
+its first pass (begun, or next in precedence with nothing completed), or
+a reopening through Iteration, which re-enters the same facts shape.
+Anywhere else the redirect names the Iteration path: a Need-level shift
+outside Requirements is an L4-grade event that travels through Iteration,
+which reopens Requirements and re-admits the amendment.
 """
 
 from __future__ import annotations
@@ -70,6 +78,7 @@ TASK_TOOL = "task"
 PROPOSE_TOOL = "propose_proposition"
 COMPLETE_TOOL = "complete_modeling_activity"
 SATISFACTION_TOOL = "await_satisfaction"
+AMEND_TOOL = "amend_need"
 
 # The pass/Probe pulse. Inside the chapters it is the specialist's own
 # regime; on the orchestrator surface it is admissible only in the tail
@@ -258,6 +267,31 @@ def conduction_check(
                 "door carries the question when its chapter is quiet"
             ),
         )
+    if tool_name == AMEND_TOOL:
+        # Ticket 22 / spec `need-refinement`: the Need is amendable only
+        # while the Requirements chapter is open — its first pass (begun,
+        # or next in precedence with nothing completed), or a reopening
+        # through Iteration (the same facts shape: active Requirements,
+        # nothing downstream completed).
+        if state.active == "requirements" or (
+            state.active is None
+            and state.expected_activity == "requirements"
+        ):
+            return None
+        return _redirect(
+            state,
+            tool_name,
+            args,
+            admissible_next=list(_ITERATION_NEXT),
+            reason=(
+                "the Need is amendable only while the Requirements "
+                "chapter is open — its first pass, or a reopening through "
+                f"Iteration (the session is in {state.label}); a "
+                "Need-level shift outside Requirements is an L4-grade "
+                "event: surface it and carry it through Iteration, which "
+                "reopens Requirements and re-admits the amendment"
+            ),
+        )
     if tool_name == PROPOSE_TOOL:
         return _check_propose(state, args, surface)
     if tool_name == COMPLETE_TOOL and surface == CHAPTER:
@@ -429,6 +463,11 @@ def _check_quiet(
 
 
 _TAIL_NEXT = "await_satisfaction"
+
+# The amendment's way back when attempted out of state (ticket 22): a
+# Need-level shift outside Requirements travels through Iteration (L4),
+# which reopens Requirements and re-admits the amendment.
+_ITERATION_NEXT = ["run_iteration (carry the L4 that invalidates the Need assumption)"]
 
 # The tail's other admissible move, named for the silence redirect: the
 # passes keep running wherever the Model still has ground to examine.
