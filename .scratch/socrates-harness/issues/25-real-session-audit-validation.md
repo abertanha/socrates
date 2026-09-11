@@ -89,3 +89,53 @@ lossy — one implicit-only relationship survived it; (2) the charter's
 Candidate spec deltas (NOT decided): exhaustive clause-level walk as the
 audit's demanded method; one re-audit after re-derivation. Fixing the
 artifacts is the session conductor's move, not this ticket's.
+
+### 2026-09-11 (afternoon) — third specimen: retro under the v2 skill, instrument left on the table
+
+The user re-ran the retro-exercise in the same session after v2
+(tickets 26–27) landed on disk via the symlink (fixed charge committed
+14:04, review-fixed 14:15; the exercise ran 14:40–14:58). Transcript
+evidence:
+
+- **Two audit passes, correct loop shape.** Pass 1 (14:40): 7 findings —
+  4 clause-level presence gaps (R5 pt-BR language, R3 format-reopen,
+  R7 authentication, R9 provenance) + 3 structure↔chart inequalities
+  (PROCESSO→AÇÃO implicit in the chart; Sessão lifecycle only in the
+  chart; user→evaluation-history only in the structure). Conductor
+  re-derived citing ground; pass 2 (14:50) re-audited and found 2
+  residual rendering mismatches (fechada state, Ticket validade); fixed;
+  no third audit — the "exactly one, without a loop" discipline held.
+- **Outcome vs the exhaustive sweep:** the sharpened targets were hit —
+  clause-level gaps v1 could not see (4 of the sweep's 8), the
+  lifecycle-lives-only-in-a-rendering gap (B6 now homed in structure),
+  both-direction rendering consistency, identifier citations in
+  re-derived rows, hierarchy member enumerations in the table. Model
+  record untouched; no report persisted.
+- **But the instrument was improvised, again — three audits, three
+  different prompts.** Pass 1's charge was the 10:44 v1-era text reused
+  nearly verbatim from conversation memory (the session compacted at
+  14:55; the skill was never re-read in the window); pass 2 was a third
+  variant — better than pass 1's (clause-level, both-way consistency),
+  which is itself the argument for fixed text: improvisation varies in
+  quality run to run. None matched the fenced charge, on disk 36
+  minutes before the first call.
+- **Consequence — the inference rule's exact target survived again:**
+  TICKET ↔ SESSÃO still ships with no relationship row. The glossary
+  says the Ticket "gates *entry* into metered work" and R-METER-1 says
+  "the paywall and the meter gate entry" — functional grammar, two
+  concepts, no inventory row. The v1-era charge pass 1 reused carries
+  no grammar list and did not demand it.
+- Not caught (open, minor): R2-refinement demand-back clause; R6 LGPD
+  regime naming; the duplicated "Level | Level" table header and
+  "Plataform" typo (copy defects, out of charter by ruling).
+- QUESTION category unexercised (R7 was treated as a plain presence
+  gap — defensible under the boundary test's staying side).
+
+Read for the real run: this specimen is adversarial to the skill in a
+way a virgin session is not — the conductor here worked from a stale
+v1-era memory of the charge; a fresh session reads the v2 skill at
+spawn. The specimen's value is the confirmation it lends ticket 27's
+premise: the fixed charge is load-bearing precisely because a conductor
+with an old prompt cached will reuse it. Watch-item for the real
+session: verify the handed charge matches the skill's fenced block
+verbatim.
