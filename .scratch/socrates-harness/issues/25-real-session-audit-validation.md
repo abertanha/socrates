@@ -4,7 +4,7 @@
 
 **What to build:** The acceptance seam exercised for real. One conversational session is run with the updated skill — a real model, a real domain, the user's own moves, Opening through Satisfaction — and the session's record answers two questions. Did the audit fire as designed at materialization: a sub-agent spawned with exactly the Model record and the deliverable files in its input, and nothing of the conversation? And did it hold: every accepted Proposition traceable to a home, every asserted entity and relationship explicit in the structure — or, where the audit found otherwise, the fix landed before the session stopped, in domain terms, with no machinery reaching what the user read. Running the session is the user's move; the analysis of the transcript and the living files can be agent-assisted (the established pattern: transcript database plus the session's files). The outcome — session date, runtime, what the audit caught or passed — is recorded here.
 
-**Blocked by:** 24 — Fresh-context deliverable audit at materialization (the instruction must exist in the skill before a session can exercise it).
+**Blocked by:** 24 — Fresh-context deliverable audit at materialization (the instruction must exist in the skill before a session can exercise it); 27 — The fixed charge and the bounded re-audit (the session must exercise the final instrument, not v1).
 
 **Status:** ready-for-agent
 
