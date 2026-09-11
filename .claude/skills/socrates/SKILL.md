@@ -189,25 +189,50 @@ deliverable audit — and only then stop.
 ### The deliverable audit
 
 Materializing is authorship, and authorship loses things — what you
-remember of the conversation can mask what the page never said. Give the
+remember of the conversation can mask what the page never said, and it
+loses at the granularity of the clause, not of the Proposition. Give the
 deliverable one reader without your memory: spawn a sub-agent — by
 whatever agent mechanism your runtime offers, none named here — that has
 no access to this conversation, and hand it exactly two things: the
 session's Model record and the deliverable files. Its one charge is that
 the deliverable carries the accepted ground whole, read modulo the
 Implementation-Independence filter (what the filter excludes is not
-missing):
+missing — the boundary is stated below):
 
-- **Presence** — every accepted Proposition traceable to a home in the
-  deliverable.
+- **Presence** — an exhaustive walk at assertion granularity. Each
+  accepted Proposition decomposes into the assertions it makes, and each
+  assertion is traceable to a home of its own in the deliverable. A
+  Proposition does not pass because its substance looks covered while
+  one of its assertions — a language, a guarantee, an enumeration, a
+  lifecycle — is nowhere on the page. A finding names the assertion, not
+  just the Proposition.
 - **Structural explicitness** — every entity and every relationship the
   accepted ground asserts appears explicitly in the structure — a
   relationship never ships only as a characteristic inside another
   concept's description — with cardinality where the ground states it.
+  Read the ground for function, not only for linkage: wherever it has
+  one concept that conditions, gates, meters, defines, produces,
+  contains, or derives from another — any functional grammar between two
+  concepts — that asserts a relationship, and the inventory must carry
+  it with the cardinality the ground states. A relationship may not
+  hide as a verb in prose.
+- **Derived renderings** — anything in the deliverable directory that is
+  not one of the three canonical files is a rendering: never a home, but
+  still checked, both ways — content found only in a rendering is a
+  finding, and a rendering that diverges from the structure's inventory
+  is a finding.
+- **The filter's boundary** — read modulo the filter clause by clause:
+  obligations and constraints of the product, stated in the domain's own
+  terms, belong (conformity to a named legal regime, the product's
+  language, what is billable); the mechanisms that implement them do not
+  (authentication flows, storage forms, delivery channels). When unsure
+  whether a clause is a gap or an exclusion, ship it as a QUESTION —
+  never a silent pass.
 
 It reports findings as facts citing the ground — each finding names the
-Proposition it bears on by its identifier, with its home in the
-deliverable or a homeless flag. It never judges quality, never proposes,
+Proposition it bears on by its identifier, and the assertion when the
+finding is clause-level, with its home in the deliverable, a homeless
+flag, or the QUESTION category. It never judges quality, never proposes,
 never reopens the Model. Rejected candidates and the Rejection Guardrail are
 the Model's negative space, not gaps; deferred Conflicts are the
 warning's business, not the audit's. Its report is information, never a

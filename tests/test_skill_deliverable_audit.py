@@ -13,6 +13,15 @@ tests pin the system prompt — one file read, many small assertions, so
 the audit instruction cannot quietly vanish and its binding limits
 cannot quietly blunt. (Acceptance beyond the pin — a real session — is
 ticket 25.)
+
+Ticket 26 sharpens the charter where the first real exercises showed it
+leaking: presence walks by assertion (a Proposition "covered in
+substance" while a clause is gone is the failure mode), explicitness
+infers relationships from functional grammar, renderings are checked
+both ways without ever counting as a home, the filter gains a
+clause-level boundary, and doubt ships as a QUESTION — never silence.
+The v1 pins below were kept green through the rewrite on purpose: the
+sharpening may not erode the boundaries v1 set.
 """
 
 from __future__ import annotations
@@ -99,6 +108,81 @@ def test_the_charter_reads_modulo_the_implementation_independence_filter() -> No
         "the filter's exclusions count as gaps again"
     )
     assert "is not missing" in flat, "the exclusion is not marked as by-design"
+
+
+def test_presence_walks_by_assertion() -> None:
+    """Ticket 26 — the presence bar decomposes: content is lost at the
+    granularity of the clause, so the walk and the finding both work at
+    that granularity."""
+    flat = _flat()
+    assert "decomposes into the assertions it makes" in flat, (
+        "presence still walks at Proposition granularity"
+    )
+    assert "traceable to a home of its own" in flat, (
+        "assertions are not traced individually"
+    )
+    assert "names the assertion, not just the Proposition" in flat, (
+        "findings stop at the Proposition"
+    )
+    # The v1 bar is retired by omission: the phrase that let a clause
+    # vanish under a covered-looking Proposition is gone from the skill.
+    assert "in substance" not in flat, (
+        "the per-proposition 'in substance' bar survived the sharpening"
+    )
+
+
+def test_explicitness_infers_relationships_from_functional_grammar() -> None:
+    """Ticket 26 — the Parte class generalized: the ground may word a
+    relationship as function rather than linkage, and the audit must
+    read it anyway."""
+    flat = _flat()
+    assert "any functional grammar between two concepts" in flat, (
+        "the inference rule is not stated"
+    )
+    assert (
+        "conditions, gates, meters, defines, produces, contains, or derives"
+        in flat
+    ), "the functional grammar list drifted or lost a verb"
+    assert "carry it with the cardinality the ground states" in flat, (
+        "inferred relationships are not held to the cardinality bar"
+    )
+
+
+def test_renderings_are_checked_both_ways_and_never_a_home() -> None:
+    """Ticket 26 — the B6 case: a lifecycle lived only inside a derived
+    diagram, and nothing looked there."""
+    flat = _flat()
+    assert "never a home" in flat, "a rendering can count as a home again"
+    assert "content found only in a rendering is a finding" in flat, (
+        "the nothing-lives-only-there direction is unchecked"
+    )
+    assert "diverges from the structure's inventory" in flat, (
+        "the rendering-must-reflect direction is unchecked"
+    )
+
+
+def test_the_filter_s_clause_boundary() -> None:
+    """Ticket 26 — the filter was clear at artifact level and ambiguous
+    at clause level; the boundary is now stated with both sides."""
+    flat = _flat()
+    assert "obligations and constraints of the product" in flat, (
+        "the staying side of the boundary is unnamed"
+    )
+    assert "conformity to a named legal regime" in flat, (
+        "the legal-regime exemplar is gone"
+    )
+    assert "what is billable" in flat, "the billable-unit exemplar is gone"
+    assert "the mechanisms that implement them do not" in flat, (
+        "the going side of the boundary is unnamed"
+    )
+
+
+def test_unsure_is_a_question_never_silence() -> None:
+    """Ticket 26 — every filter ambiguity resolved itself in silence;
+    now doubt is a finding category."""
+    flat = _flat()
+    assert "QUESTION" in flat, "the QUESTION category is missing"
+    assert "never a silent pass" in flat, "doubt may pass in silence again"
 
 
 def test_the_auditor_never_judges_and_its_report_never_blocks() -> None:
