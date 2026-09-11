@@ -52,3 +52,42 @@ stop cannot silently detach from the audit.
 - **No deployment work needed beyond the commit**: the OpenCode copies
   of the skill are symlinks to this file (2026-09-10 ruling), so they
   carry the audit instruction the moment it lands here.
+
+### Review (two-axis, post-commit)
+
+Fixed from the review:
+
+- **The no-machinery-leak limit had no instruction and no pin** (spec
+  axis — the one unchecked item on the spec's pin checklist): the audit
+  section now says "the audit's own vocabulary never reaches the user",
+  and the pin holds it.
+- **Findings were not identifier-traced** (spec axis): the spec's output
+  contract — each accepted Proposition's identifier with its home or a
+  homeless flag — had diluted to "tied to the Proposition it bears on".
+  The instruction now names the Proposition by its identifier, with its
+  home or a homeless flag; pinned by a new test.
+- **"Coverage" collided with the register's term** (Standards axis):
+  Coverage is glossary — how much of the Need-relevant domain the Model
+  accounts for, ADR-0004's budget driver. The audit's charge now reads
+  "the deliverable carries the accepted ground whole" — same duty, no
+  second sense of a governed word (the pin test's name and docstring
+  follow).
+- **"attribute" → "characteristic"** (Standards axis): the register's
+  word for what the structure deliverable lists — and the more precise
+  name for the exact slot the Parte relationship wrongly landed in.
+- **Pin precision** (both axes): the fallback's weakness admission is
+  pinned by its full sentence, not the bare word "weaker"; the
+  materialization anchor is the paragraph's verb phrase, not the
+  incidental example; the duplicated section slice became a helper;
+  assert messages throughout, per the prompt-retirement prior art.
+
+Recorded rulings (kept deliberately):
+
+- **The bare "Then stop." retirement stays global** (spec axis flagged
+  a spurious-break risk): the session has exactly one end, so a second
+  bare "Then stop." anywhere would itself be a stop detached from the
+  audit — global is the honest scope, not an accident.
+- **"the Implementation-Independence filter" keeps the compound**
+  (Standards axis judgement call): the avoid-word is the bare "filter"
+  for the Relevance Filter; this compound is the spec's own coinage and
+  pre-exists the ticket in the materialization paragraph.
