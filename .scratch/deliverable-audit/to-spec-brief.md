@@ -50,3 +50,27 @@ auditing the deliverable against the session's recorded ground.
   the session's files.
 - The skill stays one self-contained file (symlink deployment to other
   runtimes must keep working), runtime-agnostic in its phrasing.
+
+## v2 round (2026-09-11) — the sharpened charter
+
+Evidence: the two specimens recorded in the validation ticket's comments
+(the retro-exercise and the exhaustive independent sweep). The sweep's
+numbers drove every delta: 1 implicit-only false negative (functional
+grammar), 8 clause-level gaps under the "in substance" bar, a lifecycle
+living only in a rendering, fixes landing unaudited, the charge
+improvised per run, and the II filter ambiguous at clause level.
+
+Open decisions closed during this round (user rulings):
+
+1. **Seams:** extend the existing pin in place (v1 pins + the new
+   binding phrases) — no second pin file; acceptance stays the real
+   session (the validation ticket), which should run AFTER v2 lands.
+2. **Identifier citations in deliverable rows: traceability wanted.**
+   Re-derived rows cite the ground identifiers; the shipped artifact
+   traces to the Model record entry by entry.
+3. **The fixed charge lives inline in the skill file** — one
+   self-contained artifact; symlink deployment unchanged.
+
+Sequencing note: implement v2 before the ticket-25 session so the
+validating session exercises the final instrument; ticket 25's
+acceptance criteria carry over unchanged.
