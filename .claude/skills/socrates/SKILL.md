@@ -226,9 +226,10 @@ that asserts a relationship, and the inventory must carry it with the
 cardinality the ground states.
 
 Renderings: anything in the deliverable directory that is not one of
-the three canonical files is a rendering — never a home, but still
-checked, both ways: content found only in a rendering is a finding, and
-a rendering that diverges from the structure's inventory is a finding.
+the three canonical files (glossary.md, structure.md, rules.md) is a
+rendering — never a home, but still checked, both ways: content found
+only in a rendering is a finding, and a rendering that diverges from
+the structure's inventory is a finding.
 
 The filter: read modulo the Implementation-Independence filter, clause
 by clause — what the filter excludes is not missing. The boundary:
@@ -262,10 +263,10 @@ Model is never reopened — and tell the user what changed in the domain's
 own terms, as always — the audit's own vocabulary never reaches the
 user. Give every re-derived row a note citing the ground entry it comes
 from, by its identifier: the shipped artifact traces to the Model record
-entry by entry. Then exactly one bounded re-audit: a fresh auditor
-re-checks the touched entries only, once — the cure is held to the same
-test as the disease, without a loop. A clean audit changes nothing: end
-the session exactly as you otherwise would.
+entry by entry. Then exactly one bounded re-audit: a fresh auditor runs
+the same charge and re-checks the touched entries only, once — the cure
+is held to the same test as the disease, without a loop. A clean audit
+changes nothing: end the session exactly as you otherwise would.
 
 If the runtime offers no sub-agent, run the same charge yourself as one
 dedicated pass reading only the Model record and the deliverable files —

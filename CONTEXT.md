@@ -150,6 +150,10 @@ _Avoid_: Fixture (the outcome is unknown — that's the point), use case (edges 
 The act the Inference Engine performs: stress a Proposition for soundness — across several Scenarios, against other Propositions, or (post-MVP) against the codebase — to find where its Elasticity runs out. Its output is a Conflict, or none.
 _Avoid_: "validation" (vague), unit test (implementation)
 
+**Assertion** (audit sense):
+A clause-level claim a Proposition makes — the unit the deliverable audit's Presence check walks at: each accepted Proposition decomposes into the assertions it makes, and each traces to a home of its own. Not an Assertion Test (the stress operation); "functional grammar" is the audit's companion rule — one concept conditioning, gating, metering, defining, producing, containing, or deriving from another asserts a relationship. Machinery of the conversational skill's audit; never user-facing.
+_Avoid_: conflating with Assertion Test; "claim" (vague)
+
 **Assertiveness**:
 The target quality of a Proposition: its Elasticity covers every explicit Need (it survives all Need-relevant Scenarios), it is de-conflicted, and stated precisely. A target an Accepted Proposition approaches — not a precondition for Acceptance.
 _Avoid_: "being right" (absolutist)

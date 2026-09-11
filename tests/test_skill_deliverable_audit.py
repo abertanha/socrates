@@ -50,8 +50,8 @@ def _skill() -> str:
     return SKILL.read_text()
 
 
-def _flat() -> str:
-    return " ".join(_skill().split())
+def _flat(text: str | None = None) -> str:
+    return " ".join((text if text is not None else _skill()).split())
 
 
 def _audit_section() -> str:
@@ -143,8 +143,10 @@ def test_presence_walks_by_assertion() -> None:
         "findings stop at the Proposition"
     )
     # The v1 bar is retired by omission: the phrase that let a clause
-    # vanish under a covered-looking Proposition is gone from the skill.
-    assert "in substance" not in flat, (
+    # vanish under a covered-looking Proposition is gone from the audit
+    # (scoped to the audit section — the phrase is a legitimate figure
+    # of speech elsewhere).
+    assert "in substance" not in _flat(_audit_section()), (
         "the per-proposition 'in substance' bar survived the sharpening"
     )
 
@@ -231,6 +233,12 @@ def test_the_charge_bakes_in_every_check_and_limit() -> None:
     assert "for consistency only" in charge, (
         "renderings ride along as more than consistency input"
     )
+    # Self-containment: the charge names the canonical files instead of
+    # pointing at a list only the skill's other sections carry.
+    for canonical in ("glossary.md", "structure.md", "rules.md"):
+        assert canonical in charge, (
+            f"the charge references the canonical files without naming them: {canonical}"
+        )
     assert "Presence, walked by assertion" in charge, (
         "presence is not assertion-level inside the charge"
     )
@@ -285,7 +293,12 @@ def test_one_bounded_re_audit_follows_re_derivation() -> None:
     assert "re-checks the touched entries only, once" in flat, (
         "the re-audit is not bounded"
     )
-    assert "never re-audit" not in flat, (
+    # The re-auditor is no exception to the fixed-instrument rule: it
+    # runs the same charge, scoped to what changed.
+    assert "a fresh auditor runs the same charge" in flat, (
+        "the re-audit's instrument is left to improvisation"
+    )
+    assert "never re-audit" not in _flat(_audit_section()), (
         "the v1 no-re-audit rule survived the revision"
     )
 
