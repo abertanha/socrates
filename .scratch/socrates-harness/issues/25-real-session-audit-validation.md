@@ -55,3 +55,37 @@ structure's notes — decide whether identifier traceability in the
 artifact is wanted or is machinery leakage; (c) the conductor sensibly
 included a derived diagram in the audit scope marked "not required" —
 cannot arise in a clean session, noted for completeness.
+
+### 2026-09-11 — second specimen: exhaustive independent sweep (fresh-context, clause-level)
+
+A second fresh-context auditor (different runtime/model, same charter plus
+an exhaustive-walk demand: every accepted entry traced individually) swept
+the same artifacts after the retro-fix. 61 entries walked (34 accepted
+propositions + 27 survived scenarios): all traced to a home in substance,
+0 fully homeless, 0 missing-cardinality — but:
+
+- **1 IMPLICIT-ONLY the in-session auditor missed**: TICKET ↔ SESSÃO
+  (gating/billing) — same class as the Parte case; lives only in prose
+  (glossary "gates entry", R-METER-1), absent from the relationship
+  inventory and the rendering. The in-session audit's structural sweep
+  had a false negative (caught 3 of 4+).
+- **1 charter-level gap**: B6's Sessão lifecycle (archive/reactivate)
+  lives only in the rendering — which the charter does not count as a
+  home.
+- **8 clause-level gaps** beyond the charter's "in substance" bar
+  (R5 pt-BR language; R2-refinement demand-back; R3 format-reopen;
+  R1 hierarchy member enumerations; R9-refinement provenance; R6 LGPD
+  naming; R7 authenticate; B6 lifecycle) — several are
+  Implementation-Independence-adjacent (authenticate, LGPD): ruling
+  needed on whether they are gaps or legitimate exclusions.
+- **5 rendering divergences** (state characteristics only in the UML;
+  inverse edge; refinement-feed modeled differently; concrete 1..5
+  scale) plus 2 incidental defects ("Plataform" typo; duplicated table
+  header).
+
+Implications recorded for the real run: (1) an LLM audit pass is itself
+lossy — one implicit-only relationship survived it; (2) the charter's
+"in substance" presence bar lets clause-level content drop silently.
+Candidate spec deltas (NOT decided): exhaustive clause-level walk as the
+audit's demanded method; one re-audit after re-derivation. Fixing the
+artifacts is the session conductor's move, not this ticket's.
