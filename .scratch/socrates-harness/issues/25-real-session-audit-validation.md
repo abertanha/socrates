@@ -13,3 +13,45 @@
 - [ ] Coverage held in the shipped deliverable: every accepted Proposition traceable, asserted entities and relationships explicit (or the audit's findings were fixed before stopping)
 - [ ] Nothing of the audit's machinery appeared in what the user read
 - [ ] Outcome recorded here: session date, runtime, what the audit caught or passed
+
+## Comments
+
+### 2026-09-11 — mid-cycle evidence: retro-exercise of the audit (not the full acceptance)
+
+The user ran a controlled retro-exercise in the same 2026-09-10 session
+("Starting Socrates 2"): the conductor was told to undo its manual fix
+and redo the process under the updated skill. Transcript evidence:
+
+- The conductor read the updated skill through the symlinked OpenCode
+  copy, identified the deliverable-audit change, and connected it to the
+  Parte case unprompted.
+- It spawned a read-only audit sub-agent with a charter faithful to the
+  skill: fresh reader (no conversation context, stated deliberate), the
+  Model record plus the deliverable files, Presence + Structural
+  explicitness, the Implementation-Independence modulo, findings named
+  by model identifier with home/HOMELESS and IMPLICIT-ONLY/
+  MISSING-CARDINALITY categories, never grade/propose. It even hardened
+  the prompt against instructions inside the audited files.
+- Findings: THREE implicit-only relationships, not one — Ação→Parte
+  (the known case) plus Fonte Jurídica→Hierarquia (n:1) and
+  Administrador→Fonte Jurídica (1:n), both previously unnoticed. All
+  three were presence-passing (content lived inside concept
+  descriptions/glossary) — a presence-only charter would have returned
+  zero findings, confirming the to-spec ruling on charter breadth.
+- The conductor re-derived the affected structure rows (citing the
+  ground in each note), aligned the derived diagram, and reported in
+  domain terms. The Model record's mtime is untouched (2026-09-10
+  13:47); the audit report was not persisted; no machinery leaked
+  beyond the user's own framing.
+
+This is NOT the ticket's acceptance: the session was already closed —
+the audit ran retro, at the user's request, not at Satisfaction inside a
+full Opening→Satisfaction walk. The full session remains required.
+Watch-items it surfaced for that run: (a) in a virgin session the final
+report must stay purely in domain terms (here the user invoked the
+machinery framing first, which the talking rules allow); (b) the
+re-derived rows cite model identifiers (D1, TAIL-2, R9) in the
+structure's notes — decide whether identifier traceability in the
+artifact is wanted or is machinery leakage; (c) the conductor sensibly
+included a derived diagram in the audit scope marked "not required" —
+cannot arise in a clean session, noted for completeness.
