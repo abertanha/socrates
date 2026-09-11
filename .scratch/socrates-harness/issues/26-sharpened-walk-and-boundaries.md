@@ -6,13 +6,38 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-11)
 
-- [ ] Presence in the skill's charter walks by assertion — each accepted Proposition decomposed into its assertions, each traced individually; a finding names the assertion
-- [ ] The "in substance" per-proposition bar is retired from the instruction (and its retirement pinned)
-- [ ] Structural explicitness carries the inference rule with its grammar list (conditions, gates, meters, defines, produces, contains, derives)
-- [ ] Derived renderings are consistency-checked in both directions and pinned as never a home
-- [ ] The filter's clause-level boundary test is stated in the instruction (domain-termed obligations in; implementing mechanisms out)
-- [ ] The QUESTION category exists with the no-silence rule — unsure is never a silent pass
-- [ ] The v1 carried limits are re-pinned (never judges/proposes/reopens, never blocks, never persisted, vocabulary never leaks)
-- [ ] Full suite green
+- [x] Presence in the skill's charter walks by assertion — each accepted Proposition decomposed into its assertions, each traced individually; a finding names the assertion
+- [x] The "in substance" per-proposition bar is retired from the instruction (and its retirement pinned)
+- [x] Structural explicitness carries the inference rule with its grammar list (conditions, gates, meters, defines, produces, contains, derives)
+- [x] Derived renderings are consistency-checked in both directions and pinned as never a home
+- [x] The filter's clause-level boundary test is stated in the instruction (domain-termed obligations in; implementing mechanisms out)
+- [x] The QUESTION category exists with the no-silence rule — unsure is never a silent pass
+- [x] The v1 carried limits are re-pinned (never judges/proposes/reopens, never blocks, never persisted, vocabulary never leaks)
+- [x] Full suite green
+
+## Verification
+
+Implemented in 159fa9c: the four charter bullets (Presence at
+assertion granularity; Structural explicitness with the inference
+rule; Derived renderings both ways never a home; The filter's boundary
+with QUESTION/no-silence), all 11 v1 pins kept green through the
+rewrite, 5 new pins. Suite 112 → 118 across 26+27.
+
+## Rulings
+
+- **All four checks now live in the auditor's charge, not as
+  conductor-facing bullets** — ticket 27 folded them into the fixed
+  charge block, since the sub-agent reads only the charge. The charter
+  has one home; the prose intro keeps only the handoff and the
+  one-charge sentence.
+- **Retirement pinned by omission + scope**: "in substance" is absent
+  from the audit section (it never literally existed in v1 — the pin
+  guards reintroduction of the named bar), scoped to the audit section
+  so legitimate figures of speech elsewhere in the skill don't break
+  the suite (review fix, daca0d3).
+- **Register**: "assertion" (the audit's sub-propositional unit) is
+  disambiguated in CONTEXT.md beside **Assertion Test** (the stress
+  operation) — the two senses collided (review fix, daca0d3); the
+  entry carries the functional-grammar rule.
