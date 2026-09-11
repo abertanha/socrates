@@ -6,13 +6,49 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-11)
 
-- [ ] The skill's materialization step runs the audit between writing the files and stopping: a sub-agent without conversation context receiving exactly the Model record and the deliverable files
-- [ ] The charter is coverage only — presence (each accepted Proposition has a home) plus structural explicitness (asserted entities and relationships explicit, cardinality where the ground states it), modulo the Implementation-Independence filter; nothing else is flagged
-- [ ] The auditor never grades, never proposes, never reopens the Model; the report is information, never a block (Satisfaction stays the session's only verdict)
-- [ ] Findings lead to re-derivation of the affected deliverable file, stated to the user in domain terms with no machinery vocabulary; a clean audit ends the session silently as today
-- [ ] Fallback in place: where the runtime offers no sub-agent, the same charter runs as a dedicated same-context pass over the two artifacts, marked as the weaker path
-- [ ] The audit report is never persisted to the session's files
-- [ ] A pytest pin holds the instruction and every binding limit above in the skill file, placed at the materialization step (prompt-retirement precedent)
-- [ ] Full suite green
+- [x] The skill's materialization step runs the audit between writing the files and stopping: a sub-agent without conversation context receiving exactly the Model record and the deliverable files
+- [x] The charter is coverage only — presence (each accepted Proposition has a home) plus structural explicitness (asserted entities and relationships explicit, cardinality where the ground states it), modulo the Implementation-Independence filter; nothing else is flagged
+- [x] The auditor never grades, never proposes, never reopens the Model; the report is information, never a block (Satisfaction stays the session's only verdict)
+- [x] Findings lead to re-derivation of the affected deliverable file, stated to the user in domain terms with no machinery vocabulary; a clean audit ends the session silently as today
+- [x] Fallback in place: where the runtime offers no sub-agent, the same charter runs as a dedicated same-context pass over the two artifacts, marked as the weaker path
+- [x] The audit report is never persisted to the session's files
+- [x] A pytest pin holds the instruction and every binding limit above in the skill file, placed at the materialization step (prompt-retirement precedent)
+- [x] Full suite green
+
+## Verification
+
+Gate: `.venv/bin/pytest -q` — **106 passed** (96 pre-existing + 10 in
+`tests/test_skill_deliverable_audit.py`).
+
+TDD followed: the pin written first went 10-for-10 red against the
+unmodified skill (the placement test on the absent heading, the charter,
+limits, fallback, and persistence pins), then green on the instruction.
+The pin follows the prompt-retirement precedent exactly: one file read,
+flattened-whitespace phrase assertions, a placement check by index
+(materialization marker < audit heading < files-section heading), and a
+retirement check — the old bare "Then stop." must stay gone, so the
+stop cannot silently detach from the audit.
+
+### Rulings
+
+- **The audit is a subsection of the Satisfaction walk, not a new
+  ordered step**: "The session's order" stays three items — the audit
+  gates the materialization that already lived there ("### The
+  deliverable audit", between writing the files and stopping).
+- **Stop is now tied to the audit**: the materialization paragraph ends
+  "Then run the deliverable audit — and only then stop"; the pin
+  retires the bare "Then stop." so the pre-audit ordering cannot
+  silently return.
+- **Runtime-agnosticism pinned negatively**: the instruction says "by
+  whatever agent mechanism your runtime offers, none named here", and
+  the pin asserts known runtime tool names are absent from the audit
+  section.
+- **The Parte case is the explicitness criterion, generalized**: "a
+  relationship never ships only as an attribute inside another concept's
+  description" — the general rule distilled from the incident that
+  motivated the spec; presence-only would have passed it.
+- **No deployment work needed beyond the commit**: the OpenCode copies
+  of the skill are symlinks to this file (2026-09-10 ruling), so they
+  carry the audit instruction the moment it lands here.

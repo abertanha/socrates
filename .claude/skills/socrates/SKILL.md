@@ -183,7 +183,45 @@ unambiguous term per concept), `structure.md` (entities, characteristics,
 relationships, cardinality), `rules.md` (conceptual behavioral rules) —
 filtered by Implementation-Independence: structure and parameterized rules
 in; delivery technologies and concrete parameter values out (an
-admin-configurable duration is in; "120 minutes" is out). Then stop.
+admin-configurable duration is in; "120 minutes" is out). Then run the
+deliverable audit — and only then stop.
+
+### The deliverable audit
+
+Materializing is authorship, and authorship loses things — what you
+remember of the conversation can mask what the page never said. Give the
+deliverable one reader without your memory: spawn a sub-agent — by
+whatever agent mechanism your runtime offers, none named here — that has
+no access to this conversation, and hand it exactly two things: the
+session's Model record and the deliverable files. Its one charge is
+coverage of the accepted ground, read modulo the Implementation-Independence
+filter (what the filter excludes is not missing):
+
+- **Presence** — every accepted Proposition traceable to a home in the
+  deliverable.
+- **Structural explicitness** — every entity and every relationship the
+  accepted ground asserts appears explicitly in the structure — a
+  relationship never ships only as an attribute inside another concept's
+  description — with cardinality where the ground states it.
+
+It reports findings as facts citing the ground, each tied to the
+Proposition it bears on. It never judges quality, never proposes, never
+reopens the Model. Rejected candidates and the Rejection Guardrail are
+the Model's negative space, not gaps; deferred Conflicts are the
+warning's business, not the audit's. Its report is information, never a
+block — the user's Satisfaction already ended the modeling.
+
+Where the audit finds ground homeless or implicit, re-derive the
+affected deliverable file — the recorded ground stands untouched, the
+Model is never reopened — and tell the user what changed in the domain's
+own terms, as always. A clean audit changes nothing: end the session
+exactly as you otherwise would.
+
+If the runtime offers no sub-agent, run the same charge yourself as one
+dedicated pass reading only the Model record and the deliverable files —
+weaker, since your memory of the conversation is present, but still worth
+taking. Never write the audit's report into the session's files: it is a
+derived check, not ground.
 
 ## The Model's files (single source of truth)
 
