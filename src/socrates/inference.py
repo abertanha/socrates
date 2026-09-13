@@ -23,6 +23,14 @@ from socrates.paths import (
     PROPOSITIONS_PATH,
     SCENARIOS_PATH,
 )
+from socrates.asking import (
+    begin_pending,
+    clear_pending,
+    guard_pending,
+    parse_envelope,
+    require_pending,
+    token_refusal,
+)
 from socrates.coverage import CoverageStore
 from socrates.need import read_amendments, read_need
 from socrates.notifications import NotificationService, is_unavoidable
@@ -42,6 +50,54 @@ ProbeAction = Literal[
 ]
 
 MIN_SCENARIOS_PER_PROPOSITION = 2
+
+# The Probe question's accepted answers (AskHuman, ticket 28) — the
+# admissible resolution actions, with what each carries and its limits.
+PROBE_ACCEPTED_ANSWERS: list[dict[str, str]] = [
+    {
+        "token": "revise_proposition",
+        "meaning": "rewrite the quarreling Proposition's statement "
+        "— carries 'statement'",
+    },
+    {
+        "token": "add_proposition",
+        "meaning": "ground the Conflict with a new Proposition "
+        "— carries 'statement' and 'activity'",
+    },
+    {
+        "token": "supersede",
+        "meaning": "displace the Accepted party — L2 only, carries 'reason'",
+    },
+    {
+        "token": "dismiss",
+        "meaning": "the Conflict does not hold — drop it "
+        "(with L3, one of only two options)",
+    },
+    {
+        "token": "defer",
+        "meaning": "park the Conflict for later — refused when unavoidable",
+    },
+]
+PROBE_RESUME_CONTRACT = (
+    "Resume with {canonical, raw}; canonical is "
+    '{"resolutions": [{"conflict_id", "action", ...}]} '
+    "resolving every Conflict of the Batch."
+)
+
+# The Iteration question's accepted answers — confirm the proposal, or
+# name a different Modeling Activity to reopen instead.
+ITERATION_ACCEPTED_ANSWERS: list[dict[str, str]] = [
+    {"token": "confirm", "meaning": "reopen the proposed Modeling Activity"},
+    {
+        "token": "activity",
+        "meaning": "reopen a different Modeling Activity "
+        "— the token's value names it",
+    },
+]
+ITERATION_RESUME_CONTRACT = (
+    "Resume with {canonical, raw}; canonical is `true` (confirm the "
+    "proposal) or the name of a Modeling Activity to reopen instead."
+)
 VALID_EDGES: frozenset[str] = frozenset(
     {"zero", "one", "many", "none", "intersection"}
 )
@@ -431,13 +487,18 @@ class InferenceEngine:
         return surfaced
 
     def probe_batch(self) -> dict[str, Any]:
-        """Gather open L1–L3 Conflicts into a Batch; L4 is Iteration, not Probe.
+        """ASK: gather open L1–L3 Conflicts into a Batch and return the
+        pending question (AskHuman, ticket 28). L4 is Iteration, not Probe.
 
-        Application is transactional: a malformed resume rolls the Model back
-        to the pre-Batch state (snapshot taken before the Batch is created),
-        so calling ``probe_batch`` again simply re-presents the same Batch
-        instead of stranding it half-applied.
+        The Batch is created and its question persisted; the resolutions
+        arrive on a later ``probe_resume`` call. Re-calling while the probe
+        question is pending re-presents it unchanged (one Batch per
+        question); any other asking verb while it is pending is refused.
         """
+        existing = guard_pending(self._backend, "probe")
+        if existing is not None:
+            return existing
+
         conflicts = self._load_conflicts()
         open_conflicts = [
             c
@@ -450,7 +511,6 @@ class InferenceEngine:
                 "L4 Conflicts require Iteration via run_iteration"
             )
 
-        snapshot = self._snapshot_state()
         batches = self._load_batches()
         batch = Batch(
             id=f"b{len(batches) + 1}",
@@ -463,29 +523,55 @@ class InferenceEngine:
         self._save_batches(batches)
         self._save_conflicts(conflicts)
 
-        resolutions = interrupt_probe(
+        return begin_pending(
+            self._backend,
             {
                 "kind": "probe",
                 "batch_id": batch.id,
+                "question": (
+                    f"Batch {batch.id} holds {len(open_conflicts)} open "
+                    "Conflict(s) — resolve every one:"
+                ),
                 "conflicts": [
                     self._probe_conflict_payload(c) for c in open_conflicts
                 ],
-            }
+                "accepted_answers": PROBE_ACCEPTED_ANSWERS,
+                "resume_contract": PROBE_RESUME_CONTRACT,
+            },
         )
+
+    def probe_resume(self, answer: Any) -> dict[str, Any]:
+        """APPLY: apply the resumed resolutions to the pending Batch.
+
+        Transactional across the split: a malformed resume rolls the Model
+        back to the asked state (the Batch stays presented, its conflicts
+        open) and raises — the conductor repairs and resumes the same
+        Batch instead of stranding it half-applied.
+        """
+        pending = require_pending(self._backend, "probe")
+        canonical, raw = parse_envelope(answer)
+        snapshot = self._snapshot_state()
         try:
-            applied = self._apply_resolutions(batch.id, resolutions)
+            applied = self._apply_resolutions(pending["batch_id"], canonical)
         except ValueError:
             self._restore_state(snapshot)
             raise
+        clear_pending(self._backend)
         return {
-            "batch_id": batch.id,
-            "conflict_ids": batch.conflict_ids,
+            "batch_id": pending["batch_id"],
+            "conflict_ids": [c["conflict_id"] for c in applied],
             "applied": applied,
             "notifications": self._propositions.list_notifications(),
+            "answer": {"canonical": canonical, "raw": raw},
         }
 
     def run_iteration(self, conflict_id: str) -> dict[str, Any]:
-        """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen."""
+        """ASK: hand an L4 Conflict to Iteration — propose the activity and
+        return the pending confirmation question (AskHuman, ticket 28)."""
+        existing = guard_pending(self._backend, "iteration")
+        if existing is not None:
+            return existing
+
         conflicts = self._load_conflicts()
         conflict = next((c for c in conflicts if c.id == conflict_id), None)
         if conflict is None:
@@ -503,7 +589,8 @@ class InferenceEngine:
         right = self._propositions.get(conflict.other_proposition_id)
         proposed = propose_iteration_activity(left, right)
 
-        answer = interrupt_iteration(
+        return begin_pending(
+            self._backend,
             {
                 "kind": "iteration",
                 "conflict_id": conflict.id,
@@ -529,9 +616,34 @@ class InferenceEngine:
                     f"L4 Conflict {conflict.id} invalidates established beliefs. "
                     f"Confirm reopening Modeling Activity '{proposed}'?"
                 ),
-            }
+                "accepted_answers": ITERATION_ACCEPTED_ANSWERS,
+                "resume_contract": ITERATION_RESUME_CONTRACT,
+            },
         )
-        confirmed = _parse_iteration_confirm(answer, proposed)
+
+    def iteration_resume(self, answer: Any) -> dict[str, Any]:
+        """APPLY: confirm the proposal (or its override) and reopen the phase.
+
+        A non-canonical confirm is a structured refusal — the question
+        stays pending and the conductor repairs in conversation.
+        """
+        pending = require_pending(self._backend, "iteration")
+        canonical, raw = parse_envelope(answer)
+        proposed = pending["proposed_activity"]
+        try:
+            confirmed = _parse_iteration_confirm(canonical, proposed)
+        except ValueError as exc:
+            raise token_refusal(pending, str(exc)) from exc
+
+        conflicts = self._load_conflicts()
+        conflict = next(
+            (c for c in conflicts if c.id == pending["conflict_id"]), None
+        )
+        if conflict is None:
+            raise ValueError(f"Unknown Conflict {pending['conflict_id']!r}")
+        if conflict.status != "open":
+            raise ValueError(f"Conflict {conflict.id} is not open")
+
         pipeline = PipelineStore(self._backend).reopen(confirmed)
 
         conflict.status = "resolved"
@@ -541,12 +653,14 @@ class InferenceEngine:
             "activity": confirmed,
         }
         self._save_conflicts(conflicts)
+        clear_pending(self._backend)
 
         return {
             "conflict_id": conflict.id,
             "proposed_activity": proposed,
             "confirmed_activity": confirmed,
             "pipeline": pipeline,
+            "answer": {"canonical": canonical, "raw": raw},
         }
 
     def defer_conflict(self, conflict_id: str) -> dict[str, Any]:
@@ -1029,20 +1143,6 @@ class InferenceEngine:
         if not content.strip():
             return None
         return json.loads(content)
-
-
-def interrupt_probe(payload: dict[str, Any]) -> Any:
-    """Indirection so tests can import InferenceEngine without binding interrupt early."""
-    from langgraph.types import interrupt
-
-    return interrupt(payload)
-
-
-def interrupt_iteration(payload: dict[str, Any]) -> Any:
-    """Indirection so tests can import InferenceEngine without binding interrupt early."""
-    from langgraph.types import interrupt
-
-    return interrupt(payload)
 
 
 def _probe_routing(level: ConflictLevel) -> str:

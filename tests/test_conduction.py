@@ -1060,14 +1060,17 @@ def test_door_unrecognized_and_negated_answers_keep_the_chapter_open() -> None:
     r = agent.invoke(Command(resume="A marketplace checkout."), config=config)
     assert r["__interrupt__"][0].value["kind"] == "door"
 
-    # A mumble keeps the chapter open — the tool result says not_yet and
-    # the door asks again, not the Satisfaction flow.
+    # A mumble never closes and never routes — it is a structured refusal
+    # (ticket 28's ask-never-guess): the pending door question stays open
+    # and the conductor asks again, not the Satisfaction flow.
     r = agent.invoke(Command(resume="hm, what?"), config=config)
     assert r["__interrupt__"][0].value["kind"] == "door"
     mumble = _tool_result(_subagent_messages(agent, config), "req-complete-1")
-    assert mumble["ok"] is True
-    assert mumble["door"] == "not_yet"
-    assert mumble["chapter_open"] is True
+    assert mumble["ok"] is False
+    assert mumble["refused"] is True
+    assert mumble["pending"]["kind"] == "door"
+    assert mumble["accepted_tokens"] == ["close", "not_yet", "satisfaction"]
+    assert mumble["ask_again"] is True
 
     # Negated Satisfaction declines the polarity: still the door, not the
     # Satisfaction interrupt.

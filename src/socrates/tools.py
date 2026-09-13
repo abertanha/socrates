@@ -1,9 +1,20 @@
-"""Interview, Proposition-lifecycle, and Modeling Activity tools."""
+"""Interview, Proposition-lifecycle, and Modeling Activity tools.
+
+The session layer is an interrupt-backed adapter over the AskHuman
+boundary (ticket 28): every asking tool runs its verb's ask — persisting
+the pending question in the session state — surfaces the payload through
+a langgraph interrupt, classifies the resume into a canonical token with
+this layer's legacy English vocabulary (the hybrid's conductor classifies
+instead), and drives the verb's resume. A resume that classifies to
+nothing is a structured refusal the conductor repairs by asking again —
+never a silent default (the improvised-vocabulary failures the boundary
+exists to kill).
+"""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from deepagents.backends.protocol import BackendProtocol
@@ -11,26 +22,28 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools import tool
 from langgraph.types import interrupt
 
-from socrates.deliverable import DeliverableComposer, is_affirmative_satisfaction
-from socrates.opening import (
-    OPENING_GREETING,
-    OPENING_QUESTION,
-    render_opening,
-)
-from socrates.paths import NEED_PATH
-from socrates.need import read_need, write_amendment
-from socrates.pipeline import ModelingActivity, PipelineStore
-from socrates.proposition import PropositionStore
-from socrates.inference import InferenceEngine
+from socrates.asking import AskRefusal
 from socrates.coverage import CoverageStore
-
-SATISFACTION_QUESTION = (
-    "Does this feel right to you as it stands, or is there more to work through?"
+from socrates.deliverable import is_affirmative_satisfaction
+from socrates.inference import InferenceEngine
+from socrates.opening import OPENING_QUESTION
+from socrates.pipeline import ModelingActivity, PipelineStore
+from socrates.proposition import PropositionStore, proposition_payload
+from socrates.verbs import (
+    SATISFACTION_QUESTION,
+    ask_accept,
+    ask_amend_need,
+    ask_door,
+    ask_opening,
+    ask_reject,
+    ask_satisfaction,
+    resume_accept,
+    resume_amend_need,
+    resume_door,
+    resume_opening,
+    resume_reject,
+    resume_satisfaction,
 )
-
-# The door's three answers (ticket 17 / D3-D4): close the chapter, keep it
-# open, or route to the Satisfaction flow without closing it.
-DOOR_ANSWERS = ("close", "not yet", "satisfaction")
 
 # The pass/Probe pulse, stated once for every chapter specialist: one
 # regime per chapter — propose, lapidate, resolve under one roof (D1).
@@ -70,20 +83,6 @@ ACTIVITY_PROMPTS: dict[ModelingActivity, str] = {
     ),
 }
 
-
-def _proposition_payload(prop) -> dict:
-    return {
-        "ok": True,
-        "id": prop.id,
-        "statement": prop.statement,
-        "status": prop.status,
-        "activity": prop.activity,
-        "reason": prop.reason,
-        "flagged_against_id": prop.flagged_against_id,
-        "accepted_via": prop.accepted_via,
-    }
-
-
 _GENERIC_CONFIRMS = frozenset(
     {"yes", "y", "confirm", "confirmed", "ok", "true"}
 )
@@ -95,38 +94,69 @@ _ACTION_CONFIRMS: dict[str, frozenset[str]] = {
     "reject": _GENERIC_CONFIRMS | {"reject", "rejected"},
 }
 
+# Explicit declines for the three-way classifier: a word that is neither
+# an affirmation nor a decline classifies to nothing and the conductor
+# asks again (ticket 28 — never a silent default).
+_DECLINE_WORDS = frozenset(
+    {
+        "no",
+        "n",
+        "nope",
+        "decline",
+        "declined",
+        "not now",
+        "later",
+        "hold on",
+        "stop",
+        "keep as is",
+    }
+)
+
 
 def _normalize_answer(text: str) -> str:
     """Casefolded, whitespace-collapsed form of a resume answer."""
     return " ".join(text.strip().casefold().split())
 
 
-def _is_confirmed(answer: Any, action: str) -> bool:
-    """Whether the interrupt resume confirms ``action``.
+def _classify_confirmation(answer: Any, action: str) -> str | None:
+    """Legacy resume vocabulary → canonical confirm/decline (None = unrecognized).
 
     Affirmations are contextual to the action's polarity: "reject" never
     confirms an Acceptance (and "accept" never confirms a Rejection) — the
-    cross-polarity word declines the action instead. English-only for now
-    (bilingual support is deferred until after the first real-model
-    testing pass).
+    cross-polarity word declines the action instead. English-only, as this
+    adapter's classifier (the hybrid's conductor is the language boundary).
     """
     if answer is True:
-        return True
+        return "confirm"
+    if answer is False:
+        return "decline"
     if not isinstance(answer, str):
-        return False
+        return None
     normalized = _normalize_answer(answer)
-    if normalized.startswith("yes"):
-        return True
-    return normalized in _ACTION_CONFIRMS.get(action, _GENERIC_CONFIRMS)
+    if not normalized:
+        return None
+    if normalized.startswith("yes") or normalized in _ACTION_CONFIRMS.get(
+        action, _GENERIC_CONFIRMS
+    ):
+        return "confirm"
+    other = "reject" if action == "accept" else "accept"
+    if (
+        normalized.startswith("no")
+        or normalized in _DECLINE_WORDS
+        or normalized in _ACTION_CONFIRMS.get(other, frozenset())
+    ):
+        return "decline"
+    return None
 
 
 # The door's answer vocabulary (ticket 17) — contextual polarity like
 # accept/reject: "yes" closes, "no" keeps the chapter open, a Satisfaction
 # word routes to the Satisfaction flow. A NEGATED Satisfaction word
 # ("not satisfied") declines the action rather than routing — checked
-# before the substring match. An unrecognized answer keeps the chapter
-# open — the door never closes or ends the session on a mumble.
-# English-only, consistent with the deferred bilingual confirm/decline work.
+# before the substring match. An unrecognized answer classifies to
+# nothing and the conductor asks again (ticket 28's ask-never-guess: the
+# door never closes, never routes, and never silently defaults on a
+# mumble). English-only, consistent with the classifier above.
 # Deliberately distinct from deliverable's affirmative-Satisfaction
 # vocabulary: that answers the Satisfaction question, this chooses a door
 # action — different speech acts, kept in step by their tests.
@@ -166,16 +196,16 @@ _DOOR_NOT_YET_WORDS = frozenset(
 )
 
 
-def _parse_door_answer(answer: Any) -> str:
-    """Map a door resume to one of ``DOOR_ANSWERS`` ("close" / "not_yet" /
-    "satisfaction")."""
+def _parse_door_answer(answer: Any) -> str | None:
+    """Map a door resume to its canonical token ("close" / "not_yet" /
+    "satisfaction"), or ``None`` when nothing recognized."""
     if isinstance(answer, bool):
         return "close" if answer else "not_yet"
     if not isinstance(answer, str):
-        return "not_yet"
+        return None
     normalized = _normalize_answer(answer)
     if not normalized:
-        return "not_yet"
+        return None
     # Declines win before the Satisfaction substring: "not satisfied" is a
     # negation of the action's polarity, never a route to Satisfaction.
     if normalized in _DOOR_NOT_YET_WORDS or normalized.startswith("not "):
@@ -186,51 +216,41 @@ def _parse_door_answer(answer: Any) -> str:
         return "close"
     if normalized.startswith("yes"):
         return "close"
-    return "not_yet"
+    return None
 
 
-def _ask_satisfaction(
-    inference: InferenceEngine,
-    deliverable: DeliverableComposer,
-    *,
-    visiting: ModelingActivity | None = None,
-) -> str:
-    """The Satisfaction interrupt and its follow-through — shared by the
-    tail's `await_satisfaction` and the door's third answer (ticket 17).
-    ``visiting`` is the door's own activity on the door path: the chapter
-    whose door carries the question counts as visited (ticket 20)."""
-    # Warning only — Satisfaction is never hard-blocked (ADR-0002).
-    warning = inference.satisfaction_warning(visiting=visiting)
-    answer = str(
-        interrupt(
-            {
-                "kind": "satisfaction",
-                "question": SATISFACTION_QUESTION,
-                "deferred_warning": warning,
-            }
-        )
-    )
-    if is_affirmative_satisfaction(answer):
-        paths = deliverable.materialize()
-        joined = ", ".join(paths)
-        return (
-            f"Satisfaction signal received: {answer}. "
-            f"Conceptual Domain Model materialized at {joined}."
-        )
-    return f"Satisfaction signal received: {answer}"
+def _classify_satisfaction(answer: Any) -> str | None:
+    """Legacy resume vocabulary → canonical satisfied/not_satisfied."""
+    if answer is True:
+        return "satisfied"
+    if answer is False:
+        return "not_satisfied"
+    if not isinstance(answer, str):
+        return None
+    normalized = _normalize_answer(answer)
+    if not normalized:
+        return None
+    if is_affirmative_satisfaction(normalized):
+        return "satisfied"
+    if normalized.startswith(("no", "not")) or "more to work" in normalized:
+        return "not_satisfied"
+    return None
 
 
-def _declined(action: str, proposition_id: str, status: str) -> str:
-    return json.dumps(
-        {
-            "ok": False,
-            "declined": True,
-            "proposition_id": proposition_id,
-            "status": status,
-            "error": f"User declined {action}; Proposition {proposition_id} "
-            f"remains {status}",
-        }
-    )
+def _conduct(resume: Callable[[Any], dict], answer: Any) -> dict:
+    """Drive one resume over the AskHuman boundary.
+
+    A non-canonical answer is a structured refusal naming the pending
+    question and its accepted tokens — the conductor asks again, never a
+    silent default. A semantic ValueError surfaces as the same shape the
+    asking verbs have always refused with.
+    """
+    try:
+        return resume(answer)
+    except AskRefusal as refusal:
+        return refusal.payload
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
@@ -242,7 +262,6 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     """
     store = PropositionStore(backend)
     inference = InferenceEngine(backend)
-    deliverable = DeliverableComposer(backend)
 
     @tool
     def run_opening() -> str:
@@ -251,18 +270,15 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         Call this before writing any prose of your own — it is the first thing
         the user sees, and it already does the greeting for you.
         """
-        need = str(
-            interrupt(
-                {
-                    "kind": "opening",
-                    "greeting": OPENING_GREETING,
-                    "question": OPENING_QUESTION,
-                    "display": render_opening(),
-                }
+        payload = ask_opening(backend)
+        answer = interrupt(payload)
+        canonical = answer.strip() if isinstance(answer, str) else None
+        return json.dumps(
+            _conduct(
+                lambda a: resume_opening(backend, a),
+                {"canonical": canonical or None, "raw": answer},
             )
         )
-        backend.write(NEED_PATH, need)
-        return f"Need persisted to {NEED_PATH}."
 
     @tool
     def await_satisfaction() -> str:
@@ -272,7 +288,14 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         an affirmative answer, materializes the Conceptual Domain Model as
         Glossary + Structure + Rules under /model/deliverable/.
         """
-        return _ask_satisfaction(inference, deliverable)
+        payload = ask_satisfaction(backend)
+        answer = interrupt(payload)
+        return json.dumps(
+            _conduct(
+                lambda a: resume_satisfaction(backend, a),
+                {"canonical": _classify_satisfaction(answer), "raw": answer},
+            )
+        )
 
     @tool
     def amend_need(proposed_need: str, reason: str) -> str:
@@ -284,50 +307,17 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         it (the superseded shape and the reason survive, newest last). A
         declined amendment leaves the Need exactly as it was.
         """
-        if not proposed_need.strip() or not reason.strip():
-            # A mis-shaped proposal never reaches the user: an empty shape
-            # confirmed would corrupt the artifact (US4 read strictly).
-            return json.dumps(
-                {
-                    "ok": False,
-                    "error": (
-                        "An amendment needs both a reshaped Need and a "
-                        "reason"
-                    ),
-                }
+        try:
+            payload = ask_amend_need(backend, proposed_need, reason)
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)})
+        answer = interrupt(payload)
+        return json.dumps(
+            _conduct(
+                lambda a: resume_amend_need(backend, a),
+                {"canonical": _classify_confirmation(answer, "amend"), "raw": answer},
             )
-        current = read_need(backend)
-        if current is None:
-            # Defensive: the conduction governor redirects pre-Opening
-            # attempts, so an absent Need here is a race, not a path.
-            return json.dumps(
-                {"ok": False, "error": "No Need is registered to amend yet"}
-            )
-        answer = interrupt(
-            {
-                "kind": "amend_need",
-                "current_need": current,
-                "proposed_need": proposed_need,
-                "reason": reason,
-                "question": (
-                    f"Reason: {reason}. Reshape what we're building to "
-                    "the proposed shape?"
-                ),
-            }
         )
-        if not _is_confirmed(answer, "amend"):
-            return json.dumps(
-                {
-                    "ok": False,
-                    "declined": True,
-                    "error": (
-                        "User declined the Need amendment; the Need stays "
-                        "as it is"
-                    ),
-                }
-            )
-        write_amendment(backend, proposed_need, reason)
-        return json.dumps({"ok": True, "need_path": NEED_PATH})
 
     @tool
     def propose_proposition(statement: str, activity: ModelingActivity) -> str:
@@ -337,7 +327,7 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
         raised = inference.touch_propositions(prop.id)
-        payload = _proposition_payload(prop)
+        payload = proposition_payload(prop)
         if raised:
             payload["re_raised_conflict_ids"] = [c.id for c in raised]
         return json.dumps(payload)
@@ -351,71 +341,51 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
         Optional via_proposition_id marks indirect Acceptance (foundation for cascades).
         """
-        answer = interrupt(
-            {
-                "kind": "accept",
-                "proposition_id": proposition_id,
-                "via_proposition_id": via_proposition_id or None,
-                "question": (
-                    f"Do you Accept Proposition {proposition_id} into the Model?"
-                ),
-            }
-        )
-        if not _is_confirmed(answer, "accept"):
-            try:
-                status = store.get(proposition_id).status
-            except ValueError:
-                status = "unknown"
-            return _declined("Acceptance", proposition_id, status)
         try:
-            prop = store.accept(
-                proposition_id,
-                via_proposition_id=via_proposition_id or None,
-            )
-        except (ValueError, KeyError) as exc:
+            payload = ask_accept(backend, proposition_id, via_proposition_id)
+        except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        raised = inference.touch_propositions(proposition_id)
-        payload = _proposition_payload(prop)
-        if raised:
-            payload["re_raised_conflict_ids"] = [c.id for c in raised]
-        return json.dumps(payload)
+        answer = interrupt(payload)
+        result = _conduct(
+            lambda a: resume_accept(backend, a),
+            {"canonical": _classify_confirmation(answer, "accept"), "raw": answer},
+        )
+        if result.get("ok"):
+            raised = inference.touch_propositions(proposition_id)
+            if raised:
+                result["re_raised_conflict_ids"] = [c.id for c in raised]
+        return json.dumps(result)
 
     @tool
     def reject_proposition(proposition_id: str, reason: str) -> str:
         """Reject a Proposition with an explicit reason; records it in the Rejection Guardrail."""
-        answer = interrupt(
-            {
-                "kind": "reject",
-                "proposition_id": proposition_id,
-                "reason": reason,
-                "question": (
-                    f"Do you Reject Proposition {proposition_id}? Reason: {reason}"
-                ),
-            }
-        )
-        if not _is_confirmed(answer, "reject"):
-            try:
-                status = store.get(proposition_id).status
-            except ValueError:
-                status = "unknown"
-            return _declined("Rejection", proposition_id, status)
         try:
-            prop = store.reject(proposition_id, reason)
-        except (ValueError, KeyError) as exc:
+            payload = ask_reject(backend, proposition_id, reason)
+        except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        raised = inference.touch_propositions(proposition_id)
-        payload = _proposition_payload(prop)
-        if raised:
-            payload["re_raised_conflict_ids"] = [c.id for c in raised]
-        return json.dumps(payload)
+        answer = interrupt(payload)
+        result = _conduct(
+            lambda a: resume_reject(backend, a),
+            {"canonical": _classify_confirmation(answer, "reject"), "raw": answer},
+        )
+        if result.get("ok"):
+            raised = inference.touch_propositions(proposition_id)
+            if raised:
+                result["re_raised_conflict_ids"] = [c.id for c in raised]
+        return json.dumps(result)
 
     @tool
     def run_iteration(conflict_id: str) -> str:
         """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen activity."""
         try:
-            result = inference.run_iteration(conflict_id)
+            payload = inference.run_iteration(conflict_id)
         except (ValueError, KeyError) as exc:
             return json.dumps({"ok": False, "error": str(exc)})
+        answer = interrupt(payload)
+        result = _conduct(
+            lambda a: inference.iteration_resume(a),
+            {"canonical": answer, "raw": answer},
+        )
         return json.dumps({"ok": True, **result})
 
     return [
@@ -501,12 +471,17 @@ def build_pulse_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     def probe_batch() -> str:
         """Gather open L1–L3 Conflicts into one Batch and Probe the user.
 
+        The Batch's question returns as a pending-question payload; the
+        resumed resolutions apply on the same call (the session adapter),
+        transactionally — a malformed resume rolls back and re-presents.
         L4 Conflicts are not Probe-resolved — use run_iteration.
         """
         try:
-            result = inference.probe_batch()
+            payload = inference.probe_batch()
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
+        answer = interrupt(payload)
+        result = _conduct(lambda a: inference.probe_resume(a), answer)
         return json.dumps({"ok": True, **result})
 
     @tool
@@ -553,13 +528,11 @@ def build_activity_tools(
     one roof. The pulse composes in unconditionally here; conduction governs
     it only on the orchestrator surface. The chapter door (ticket 17) lives
     in `complete_modeling_activity`: when the chapter is quiet, its
-    declaration interrupts the user with three answers — close / not yet /
+    declaration asks the user with three answers — close / not yet /
     Satisfaction.
     """
     store = PropositionStore(backend)
     pipeline = PipelineStore(backend)
-    inference = InferenceEngine(backend)
-    deliverable = DeliverableComposer(backend)
 
     def propose_proposition(statement: str) -> str:
         try:
@@ -567,112 +540,67 @@ def build_activity_tools(
             prop = store.propose(statement, activity=activity)
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(_proposition_payload(prop))
+        return json.dumps(proposition_payload(prop))
 
     def accept_proposition(
         proposition_id: str,
         via_proposition_id: str = "",
     ) -> str:
-        answer = interrupt(
-            {
-                "kind": "accept",
-                "proposition_id": proposition_id,
-                "via_proposition_id": via_proposition_id or None,
-                "question": (
-                    f"Do you Accept Proposition {proposition_id} into the Model?"
-                ),
-            }
-        )
-        if not _is_confirmed(answer, "accept"):
-            try:
-                status = store.get(proposition_id).status
-            except ValueError:
-                status = "unknown"
-            return _declined("Acceptance", proposition_id, status)
         try:
-            prop = store.accept(
-                proposition_id,
-                via_proposition_id=via_proposition_id or None,
-            )
-        except (ValueError, KeyError) as exc:
+            payload = ask_accept(backend, proposition_id, via_proposition_id)
+        except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(_proposition_payload(prop))
+        answer = interrupt(payload)
+        return json.dumps(
+            _conduct(
+                lambda a: resume_accept(backend, a),
+                {"canonical": _classify_confirmation(answer, "accept"), "raw": answer},
+            )
+        )
 
     def reject_proposition(proposition_id: str, reason: str) -> str:
-        answer = interrupt(
-            {
-                "kind": "reject",
-                "proposition_id": proposition_id,
-                "reason": reason,
-                "question": (
-                    f"Do you Reject Proposition {proposition_id}? Reason: {reason}"
-                ),
-            }
-        )
-        if not _is_confirmed(answer, "reject"):
-            try:
-                status = store.get(proposition_id).status
-            except ValueError:
-                status = "unknown"
-            return _declined("Rejection", proposition_id, status)
         try:
-            prop = store.reject(proposition_id, reason)
-        except (ValueError, KeyError) as exc:
+            payload = ask_reject(backend, proposition_id, reason)
+        except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(_proposition_payload(prop))
+        answer = interrupt(payload)
+        return json.dumps(
+            _conduct(
+                lambda a: resume_reject(backend, a),
+                {"canonical": _classify_confirmation(answer, "reject"), "raw": answer},
+            )
+        )
 
     def complete_modeling_activity() -> str:
-        """Declare the chapter complete — the user confirms at the door.
+        """Declare the chapter complete — the user answers at the door.
 
         The conduction governor has already established the chapter is quiet
         (every Proposition born in it through ≥1 pass, no Batch pending);
         quiet is bookkeeping, "good enough to close" is the user's judgment
-        (ADR-0002). The declaration interrupts with three answers (D3/D4):
-        "close" completes the chapter, "not yet" keeps it open (the
-        maieutic valve stays live), "satisfaction" routes to the
-        Satisfaction flow WITHOUT closing the chapter.
+        (ADR-0002). The declaration asks with three answers (D3/D4):
+        "close" completes the chapter, "not_yet" keeps it open (the maieutic
+        valve stays live), "satisfaction" routes to the Satisfaction flow
+        WITHOUT closing the chapter.
         """
-        answer = interrupt(
-            {
-                "kind": "door",
-                "activity": activity,
-                "question": (
-                    f"Confirm closing Modeling Activity '{activity}'?"
-                ),
-                "answers": list(DOOR_ANSWERS),
-            }
+        payload = ask_door(backend, activity)
+        answer = interrupt(payload)
+        result = _conduct(
+            lambda a: resume_door(backend, a),
+            {"canonical": _parse_door_answer(answer), "raw": answer},
         )
-        door = _parse_door_answer(answer)
-        if door == "not_yet":
-            return json.dumps(
+        if result.get("door") == "satisfaction" and "pending" in result:
+            # The door's third answer chains the Satisfaction question —
+            # same turn, its own interrupt (ticket 17's shared flow).
+            follow = result.pop("pending")
+            follow_answer = interrupt(follow)
+            result["satisfaction"] = _conduct(
+                lambda a: resume_satisfaction(backend, a),
                 {
-                    "ok": True,
-                    "door": "not_yet",
-                    "activity": activity,
-                    "chapter_open": True,
-                }
+                    "canonical": _classify_satisfaction(follow_answer),
+                    "raw": follow_answer,
+                },
             )
-        if door == "satisfaction":
-            outcome = _ask_satisfaction(inference, deliverable, visiting=activity)
-            return json.dumps(
-                {
-                    "ok": True,
-                    "door": "satisfaction",
-                    "activity": activity,
-                    "chapter_open": True,
-                    "satisfaction": outcome,
-                }
-            )
-        try:
-            # A chapter with no Propositions is vacuously quiet (D3): its
-            # declaration opens and closes the door in one step.
-            pipeline.begin(activity)
-            pipeline.complete(activity)
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
-        return json.dumps(
-            {"ok": True, "completed": activity, "door": "close"}
-        )
+        return json.dumps(result)
 
     return [
         StructuredTool.from_function(

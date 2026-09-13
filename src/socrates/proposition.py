@@ -52,6 +52,20 @@ def normalize_statement(statement: str) -> str:
     return " ".join(statement.casefold().split())
 
 
+def proposition_payload(prop: Proposition) -> dict[str, Any]:
+    """The JSON shape of a Proposition as verbs and tools return it."""
+    return {
+        "ok": True,
+        "id": prop.id,
+        "statement": prop.statement,
+        "status": prop.status,
+        "activity": prop.activity,
+        "reason": prop.reason,
+        "flagged_against_id": prop.flagged_against_id,
+        "accepted_via": prop.accepted_via,
+    }
+
+
 class PropositionStore:
     """Deterministic Proposition lifecycle over a deepagents backend."""
 

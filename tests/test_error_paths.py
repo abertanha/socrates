@@ -1,10 +1,12 @@
 """Engine-level tests for maieutic-loop error paths (post-MVP fixes).
 
-Seam: deterministic harness logic over ``FilesystemBackend``, with the Probe
-interrupt stubbed — these paths live below the session-orchestration seam the
-ticket tests exercise. Covers: empty Reconciliation as a valid outcome,
-transactional Probe application (malformed resume rolls back and the Batch
-re-presents), and Deferral never blocking the current pass.
+Seam: deterministic harness logic over ``FilesystemBackend``, with the
+Probe asked and resumed through the AskHuman split (ticket 28) — these
+paths live below the session-orchestration seam the ticket tests
+exercise. Covers: empty Reconciliation as a valid outcome, transactional
+Probe application (a malformed resume rolls back to the asked state and
+the same Batch re-presents), and Deferral never blocking the current
+pass.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from pathlib import Path
 import pytest
 from deepagents.backends.filesystem import FilesystemBackend
 
-import socrates.inference as inference_module
+from socrates.asking import read_pending
 from socrates.inference import InferenceEngine
 from socrates.paths import (
     BATCHES_PATH,
@@ -88,16 +90,20 @@ def test_empty_reconciliation_stamps_pass_and_unblocks_scenarios(tmp_path):
         engine.reconcile([])
 
 
-def test_malformed_probe_resume_rolls_back_and_re_presents(tmp_path, monkeypatch):
+def test_malformed_probe_resume_rolls_back_and_re_presents(tmp_path):
     backend, engine, store = _engine(tmp_path)
     _at_pass_two(backend, store)
     store.propose("A Payment may belong to many Orders.", "domain_modeling")
     conflicts = _reconcile_many_orders(engine)
     assert [c.id for c in conflicts] == ["c1"]
 
-    answers = iter(
-        [
-            # First item is valid, second is garbage — nothing may persist.
+    asked = engine.probe_batch()
+    assert asked["kind"] == "probe"
+    assert asked["batch_id"] == "b2"
+
+    # First resolution is valid, second is garbage — nothing may persist.
+    with pytest.raises(ValueError, match="Unknown Probe action"):
+        engine.probe_resume(
             {
                 "resolutions": [
                     {
@@ -107,53 +113,50 @@ def test_malformed_probe_resume_rolls_back_and_re_presents(tmp_path, monkeypatch
                     },
                     {"conflict_id": "c1", "action": "acao_invalida"},
                 ]
-            },
-            {"resolutions": [{"conflict_id": "c1", "action": "dismiss"}]},
-        ]
-    )
-    monkeypatch.setattr(
-        inference_module, "interrupt_probe", lambda payload: next(answers)
-    )
+            }
+        )
 
-    with pytest.raises(ValueError, match="Unknown Probe action"):
-        engine.probe_batch()
-
-    # Rollback: conflict open and un-batched, Batch gone, no partial revise.
+    # Rollback to the asked state: conflict still open in its presented
+    # Batch, no partial revise — and the question still pending.
     rolled = _load(backend, CONFLICTS_PATH)["conflicts"]
     assert rolled[0]["status"] == "open"
-    assert rolled[0]["batch_id"] is None
-    assert _load(backend, BATCHES_PATH)["batches"] == [
-        {"id": "b1", "conflict_ids": [], "status": "probed"}
+    assert rolled[0]["batch_id"] == "b2"
+    batches = _load(backend, BATCHES_PATH)["batches"]
+    assert batches == [
+        {"id": "b1", "conflict_ids": [], "status": "probed"},
+        {"id": "b2", "conflict_ids": ["c1"], "status": "open"},
     ]
     assert (
         _load(backend, "/model/propositions.json")["propositions"][1]["statement"]
         == "A Payment may belong to many Orders."
     )
+    assert read_pending(backend)["kind"] == "probe"
 
-    # Re-present: the same conflicts form a fresh Batch and resolve cleanly.
-    result = engine.probe_batch()
+    # Re-present: the same Batch re-presents unchanged (no b3), and the
+    # repaired resume resolves it cleanly.
+    again = engine.probe_batch()
+    assert again == asked
+    result = engine.probe_resume(
+        {"resolutions": [{"conflict_id": "c1", "action": "dismiss"}]}
+    )
     assert result["batch_id"] == "b2"
-    assert result["conflict_ids"] == ["c1"]
     assert result["applied"][0]["action"] == "dismiss"
     final = _load(backend, CONFLICTS_PATH)["conflicts"]
     assert final[0]["status"] == "resolved"
+    assert read_pending(backend) is None
 
 
-def test_probe_defer_of_reconciliation_conflict_unblocks(tmp_path, monkeypatch):
+def test_probe_defer_of_reconciliation_conflict_unblocks(tmp_path):
     backend, engine, store = _engine(tmp_path)
     _at_pass_two(backend, store)
     store.propose("A Payment may belong to many Orders.", "domain_modeling")
     _reconcile_many_orders(engine)
     assert _load(backend, INFERENCE_STATE_PATH)["blocked_proposition_ids"] == ["p2"]
 
-    monkeypatch.setattr(
-        inference_module,
-        "interrupt_probe",
-        lambda payload: {
-            "resolutions": [{"conflict_id": "c1", "action": "defer"}]
-        },
-    )
     engine.probe_batch()
+    engine.probe_resume(
+        {"resolutions": [{"conflict_id": "c1", "action": "defer"}]}
+    )
 
     # Deferral never blocks the current pass (CONTEXT) — p2 released.
     assert _load(backend, INFERENCE_STATE_PATH)["blocked_proposition_ids"] == []
