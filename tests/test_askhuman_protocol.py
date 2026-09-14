@@ -622,3 +622,80 @@ def test_satisfaction_satisfied_materializes_the_deliverable(tmp_path):
     assert result["satisfied"] is True
     assert backend.read(DELIVERABLE_GLOSSARY_PATH).file_data is not None
     assert read_pending(backend) is None
+
+
+# --- Review cycle on dbe414d..HEAD: engine-side pins ---------------------------
+
+
+def test_iteration_asks_name_their_conflict_and_refuse_foreign_ids(tmp_path):
+    backend = _backend(tmp_path)
+    engine = _l4_engine(backend)
+
+    payload = engine.run_iteration("c1")
+    assert payload["subject"] == "c1"
+
+    # A different (or unknown) conflict while c1's question is pending is
+    # refused — never silently re-presented as if it were the same ask.
+    with pytest.raises(AskRefusal, match="pending"):
+        engine.run_iteration("c999")
+
+    # The question survives, still c1's.
+    assert read_pending(backend)["conflict_id"] == "c1"
+
+
+def test_probe_resume_rolls_back_on_any_apply_failure(tmp_path):
+    backend = _backend(tmp_path)
+    engine = _l1_engine(backend)
+    engine.probe_batch()
+
+    # A well-shaped batch whose second resolution is malformed raises
+    # TypeError mid-apply — the rollback must not depend on the error's
+    # class: the Batch stays presented and nothing half-applies.
+    with pytest.raises(TypeError):
+        engine.probe_resume(
+            {
+                "canonical": {
+                    "resolutions": [
+                        {
+                            "conflict_id": "c1",
+                            "action": "revise_proposition",
+                            "statement": "Authorized means captured.",
+                        },
+                        {"conflict_id": [], "action": "dismiss"},
+                    ]
+                },
+                "raw": "…",
+            }
+        )
+
+    assert read_pending(backend)["kind"] == "probe"
+    conflict = next(
+        c
+        for c in json.loads(
+            backend.read("/model/conflicts.json").file_data["content"]
+        )["conflicts"]
+        if c["id"] == "c1"
+    )
+    assert conflict["status"] == "open"
+    assert conflict.get("resolution") is None
+    # And the asked question re-presents for a repaired resume.
+    assert engine.probe_batch()["batch_id"] == "b1"
+
+
+def test_reasked_satisfaction_refreshes_its_derived_warning(tmp_path):
+    backend = _backend(tmp_path)
+    engine = _l1_engine(backend)
+
+    first = ask_satisfaction(backend)
+    assert first["deferred_warning"]["conflicts"] == []
+
+    # While the question stands, a Conflict is deferred (a non-asking
+    # verb — the one-pending law never blocks it) — the advisory warning
+    # is derived state: the re-presented question must not carry a stale
+    # picture of the session.
+    engine.defer_conflict("c1")
+
+    re_presented = ask_satisfaction(backend)
+    assert re_presented["question"] == first["question"]
+    assert re_presented["deferred_warning"]["conflicts"] != []
+    assert read_pending(backend)["deferred_warning"]["conflicts"] != []

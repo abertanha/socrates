@@ -22,13 +22,14 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools import tool
 from langgraph.types import interrupt
 
-from socrates.asking import AskRefusal
+from socrates.asking import AskRefusal, parse_envelope
 from socrates.coverage import CoverageStore
 from socrates.deliverable import is_affirmative_satisfaction
 from socrates.inference import InferenceEngine
 from socrates.opening import OPENING_QUESTION
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore, proposition_payload
+from socrates.refusal import Refusal, refusal_payload
 from socrates.verbs import (
     SATISFACTION_QUESTION,
     ask_accept,
@@ -122,10 +123,16 @@ def _normalize_answer(text: str) -> str:
 def _classify_confirmation(answer: Any, action: str) -> str | None:
     """Legacy resume vocabulary → canonical confirm/decline (None = unrecognized).
 
-    Affirmations are contextual to the action's polarity: "reject" never
-    confirms an Acceptance (and "accept" never confirms a Rejection) — the
-    cross-polarity word declines the action instead. English-only, as this
-    adapter's classifier (the hybrid's conductor is the language boundary).
+    Affirmations are contextual to the action's polarity: for the
+    lifecycle actions, "reject" never confirms an Acceptance (and
+    "accept" never confirms a Rejection) — the cross-polarity word
+    declines the action instead; for every other action those words are
+    just off-vocabulary and refuse. A decline is an exact word, never a
+    prefix: "No problem, go ahead" affirms nothing decidable and "not
+    sure" decides nothing — hedged sentences refuse and the conductor
+    asks again (ticket 28's ask-never-guess). English-only, as this
+    adapter's classifier (the hybrid's conductor is the language
+    boundary).
     """
     if answer is True:
         return "confirm"
@@ -140,27 +147,30 @@ def _classify_confirmation(answer: Any, action: str) -> str | None:
         action, _GENERIC_CONFIRMS
     ):
         return "confirm"
-    other = "reject" if action == "accept" else "accept"
-    if (
-        normalized.startswith("no")
-        or normalized in _DECLINE_WORDS
-        or normalized in _ACTION_CONFIRMS.get(other, frozenset())
-    ):
+    words = normalized.split()
+    if len(words) == 1 and words[0] in {"no", "n", "nope"}:
         return "decline"
+    if normalized in _DECLINE_WORDS:
+        return "decline"
+    if action in _ACTION_CONFIRMS:
+        other = "reject" if action == "accept" else "accept"
+        if normalized in _ACTION_CONFIRMS[other]:
+            return "decline"
     return None
 
 
 # The door's answer vocabulary (ticket 17) — contextual polarity like
 # accept/reject: "yes" closes, "no" keeps the chapter open, a Satisfaction
-# word routes to the Satisfaction flow. A NEGATED Satisfaction word
-# ("not satisfied") declines the action rather than routing — checked
-# before the substring match. An unrecognized answer classifies to
-# nothing and the conductor asks again (ticket 28's ask-never-guess: the
-# door never closes, never routes, and never silently defaults on a
-# mumble). English-only, consistent with the classifier above.
-# Deliberately distinct from deliverable's affirmative-Satisfaction
-# vocabulary: that answers the Satisfaction question, this chooses a door
-# action — different speech acts, kept in step by their tests.
+# word routes to the Satisfaction flow. Matching is exact-word: the
+# "satisf" substring is dead ("dissatisfied" is a NEGATION, and negated
+# Satisfaction words like "not satisfied" keep the chapter open), and a
+# hedged compound refuses rather than silently deciding. An unrecognized
+# answer classifies to nothing and the conductor asks again (ticket 28's
+# ask-never-guess: the door never closes, never routes, and never
+# silently defaults on a mumble). English-only, consistent with the
+# classifier above. Kept in step with _classify_satisfaction: every word
+# that routes here classifies as "satisfied" at the question it routes
+# to — one vocabulary, two speech acts.
 _DOOR_SATISFACTION_WORDS = frozenset(
     {
         "satisfaction",
@@ -182,12 +192,14 @@ _DOOR_CLOSE_WORDS = _GENERIC_CONFIRMS | {
 _DOOR_NOT_YET_WORDS = frozenset(
     {
         "not yet",
+        "not_yet",
         "no",
         "n",
         "later",
         "wait",
         "not now",
         "not satisfied",
+        "dissatisfied",
         "unsatisfied",
         "keep open",
         "keep it open",
@@ -199,7 +211,8 @@ _DOOR_NOT_YET_WORDS = frozenset(
 
 def _parse_door_answer(answer: Any) -> str | None:
     """Map a door resume to its canonical token ("close" / "not_yet" /
-    "satisfaction"), or ``None`` when nothing recognized."""
+    "satisfaction"), or ``None`` when nothing recognized. The payload's
+    own advertised spelling ("not_yet") is always recognized."""
     if isinstance(answer, bool):
         return "close" if answer else "not_yet"
     if not isinstance(answer, str):
@@ -207,11 +220,9 @@ def _parse_door_answer(answer: Any) -> str | None:
     normalized = _normalize_answer(answer)
     if not normalized:
         return None
-    # Declines win before the Satisfaction substring: "not satisfied" is a
-    # negation of the action's polarity, never a route to Satisfaction.
-    if normalized in _DOOR_NOT_YET_WORDS or normalized.startswith("not "):
+    if normalized in _DOOR_NOT_YET_WORDS:
         return "not_yet"
-    if normalized in _DOOR_SATISFACTION_WORDS or "satisf" in normalized:
+    if normalized in _DOOR_SATISFACTION_WORDS:
         return "satisfaction"
     if normalized in _DOOR_CLOSE_WORDS:
         return "close"
@@ -221,7 +232,12 @@ def _parse_door_answer(answer: Any) -> str | None:
 
 
 def _classify_satisfaction(answer: Any) -> str | None:
-    """Legacy resume vocabulary → canonical satisfied/not_satisfied."""
+    """Legacy resume vocabulary → canonical satisfied/not_satisfied.
+
+    Kept in step with the door's routing vocabulary: a word that routes
+    to this flow at the door (— "enough", "stop here" —) classifies as
+    "satisfied" here, so repeating the word the system itself accepted
+    never loops."""
     if answer is True:
         return "satisfied"
     if answer is False:
@@ -235,6 +251,8 @@ def _classify_satisfaction(answer: Any) -> str | None:
         return "satisfied"
     if normalized.startswith(("no", "not")) or "more to work" in normalized:
         return "not_satisfied"
+    if normalized in _DOOR_SATISFACTION_WORDS:
+        return "satisfied"
     return None
 
 
@@ -243,13 +261,17 @@ def _conduct(resume: Callable[[Any], dict], answer: Any) -> dict:
 
     A non-canonical answer is a structured refusal naming the pending
     question and its accepted tokens — the conductor asks again, never a
-    silent default. A semantic ValueError surfaces as the same shape the
-    asking verbs have always refused with.
+    silent default. A wrong-order ``Refusal`` keeps its shape (refused +
+    admissible_next, the same JSON the invocation files emit); a
+    semantic ValueError surfaces as the shape the asking verbs have
+    always refused with.
     """
     try:
         return resume(answer)
     except AskRefusal as refusal:
         return refusal.payload
+    except Refusal as refusal:
+        return refusal_payload(refusal)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -267,6 +289,8 @@ def _ask(ask: Callable[[], dict]) -> dict:
         return ask()
     except AskRefusal as refusal:
         return refusal.payload
+    except Refusal as refusal:
+        return refusal_payload(refusal)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -277,6 +301,27 @@ def _envelope(answer: Any, canonical: Any) -> dict:
     return {"canonical": canonical, "raw": answer}
 
 
+def _session_resume(
+    answer: Any,
+    classify: Callable[[Any], Any],
+    resume: Callable[[Any], dict],
+) -> dict:
+    """One block for every session resume — the seam's two grammatical
+    halves made to agree (review fix).
+
+    The answer crosses ``parse_envelope`` FIRST, so the session surface
+    honors the very {canonical, raw} contract its payloads advertise;
+    the canonical alone is classified against the legacy vocabulary; and
+    the envelope is rebuilt with the raw words riding as provenance. An
+    unclassifiable answer reaches the engine as canonical ``None`` and
+    comes back as the structured token refusal — never a silent
+    default, never a double wrap.
+    """
+    canonical, raw = parse_envelope(answer)
+    decided = classify(canonical)
+    return _conduct(resume, _envelope(raw, decided))
+
+
 def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     """Tools for the main Socrates orchestrator.
 
@@ -284,7 +329,6 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     conduction governor admits it on this surface only in the tail and
     redirects out-of-state attempts into the chapters.
     """
-    store = PropositionStore(backend)
     inference = InferenceEngine(backend)
 
     @tool
@@ -298,11 +342,11 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         if payload.get("refused") or payload.get("ok") is False:
             return json.dumps(payload)
         answer = interrupt(payload)
-        canonical = answer.strip() if isinstance(answer, str) else None
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                lambda c: c.strip() if isinstance(c, str) and c.strip() else None,
                 lambda a: resume_opening(backend, a),
-                _envelope(answer, canonical or None),
             )
         )
 
@@ -319,9 +363,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                _classify_satisfaction,
                 lambda a: resume_satisfaction(backend, a),
-                _envelope(answer, _classify_satisfaction(answer)),
             )
         )
 
@@ -340,9 +385,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                lambda c: _classify_confirmation(c, "amend"),
                 lambda a: resume_amend_need(backend, a),
-                _envelope(answer, _classify_confirmation(answer, "amend")),
             )
         )
 
@@ -371,9 +417,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                lambda c: _classify_confirmation(c, "accept"),
                 lambda a: resume_accept(backend, a, touch=True),
-                _envelope(answer, _classify_confirmation(answer, "accept")),
             )
         )
 
@@ -385,9 +432,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
             return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                lambda c: _classify_confirmation(c, "reject"),
                 lambda a: resume_reject(backend, a, touch=True),
-                _envelope(answer, _classify_confirmation(answer, "reject")),
             )
         )
 
@@ -398,9 +446,10 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         if payload.get("refused") or payload.get("ok") is False:
             return json.dumps(payload)
         answer = interrupt(payload)
-        result = _conduct(
+        result = _session_resume(
+            answer,
+            lambda c: c,  # the engine parses its own confirm grammar
             lambda a: inference.iteration_resume(a),
-            _envelope(answer, answer),
         )
         return json.dumps({"ok": True, **result})
 
@@ -496,7 +545,11 @@ def build_pulse_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         if payload.get("refused") or payload.get("ok") is False:
             return json.dumps(payload)
         answer = interrupt(payload)
-        result = _conduct(lambda a: inference.probe_resume(a), answer)
+        result = _session_resume(
+            answer,
+            lambda c: c,  # resolutions ride their own shape
+            lambda a: inference.probe_resume(a),
+        )
         return json.dumps({"ok": True, **result})
 
     @tool
@@ -568,9 +621,10 @@ def build_activity_tools(
             return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                lambda c: _classify_confirmation(c, "accept"),
                 lambda a: resume_accept(backend, a),
-                _envelope(answer, _classify_confirmation(answer, "accept")),
             )
         )
 
@@ -580,9 +634,10 @@ def build_activity_tools(
             return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
-            _conduct(
+            _session_resume(
+                answer,
+                lambda c: _classify_confirmation(c, "reject"),
                 lambda a: resume_reject(backend, a),
-                _envelope(answer, _classify_confirmation(answer, "reject")),
             )
         )
 
@@ -601,18 +656,20 @@ def build_activity_tools(
         if payload.get("refused") or payload.get("ok") is False:
             return json.dumps(payload)
         answer = interrupt(payload)
-        result = _conduct(
+        result = _session_resume(
+            answer,
+            _parse_door_answer,
             lambda a: resume_door(backend, a),
-            _envelope(answer, _parse_door_answer(answer)),
         )
         if result.get("door") == "satisfaction" and "pending" in result:
             # The door's third answer chains the Satisfaction question —
             # same turn, its own interrupt (ticket 17's shared flow).
             follow = result.pop("pending")
             follow_answer = interrupt(follow)
-            result["satisfaction"] = _conduct(
+            result["satisfaction"] = _session_resume(
+                follow_answer,
+                _classify_satisfaction,
                 lambda a: resume_satisfaction(backend, a),
-                _envelope(follow_answer, _classify_satisfaction(follow_answer)),
             )
         return json.dumps(result)
 

@@ -357,7 +357,7 @@ def test_early_satisfaction_via_door_warns_unvisited_chapters() -> None:
     door = r["__interrupt__"][0].value
     assert door["kind"] == "door"
     assert door["activity"] == "requirements"
-    assert door["answers"] == ["close", "not yet", "satisfaction"]
+    assert door["answers"] == ["close", "not_yet", "satisfaction"]
 
     r = agent.invoke(Command(resume="satisfaction"), config=config)
     satisfaction = r["__interrupt__"][0].value

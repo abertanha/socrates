@@ -20,7 +20,7 @@ from typing import Any, Callable
 from deepagents.backends.filesystem import FilesystemBackend
 
 from socrates.asking import AskRefusal
-from socrates.refusal import Refusal
+from socrates.refusal import Refusal, refusal_payload
 
 
 def invoke(
@@ -35,12 +35,7 @@ def invoke(
     except AskRefusal as exc:
         payload = exc.payload
     except Refusal as exc:
-        payload = {
-            "ok": False,
-            "refused": True,
-            "reason": exc.reason,
-            "admissible_next": exc.admissible,
-        }
+        payload = refusal_payload(exc)
     except (ValueError, KeyError) as exc:
         payload = {"ok": False, "error": str(exc)}
     except Exception as exc:  # noqa: BLE001 — the boundary is never a traceback

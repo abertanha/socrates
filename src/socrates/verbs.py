@@ -39,6 +39,7 @@ from socrates.asking import (
     guard_pending,
     parse_envelope,
     read_pending,
+    refresh_pending,
     require_pending,
     token_refusal,
     validate_token,
@@ -52,10 +53,10 @@ from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore, proposition_payload
 from socrates.refusal import Refusal
 
-# The door's three answers (ticket 17 / D3-D4), kept for the payload's
-# legacy display list: close the chapter, keep it open, or route to the
-# Satisfaction flow without closing it.
-DOOR_ANSWERS = ("close", "not yet", "satisfaction")
+# The door's three answers (ticket 17 / D3-D4) — the canonical tokens the
+# resume validates, shown in the payload so every surface spells the
+# door's second answer the one way the engine accepts.
+DOOR_ANSWERS = ("close", "not_yet", "satisfaction")
 
 SATISFACTION_QUESTION = (
     "Does this feel right to you as it stands, or is there more to work through?"
@@ -385,16 +386,20 @@ def ask_satisfaction(
     (ticket 20).
     """
     warning = InferenceEngine(backend).satisfaction_warning(visiting=visiting)
-    return begin_pending(
-        backend,
-        {
-            "kind": "satisfaction",
-            "question": SATISFACTION_QUESTION,
-            "deferred_warning": warning,
-            "accepted_answers": SATISFACTION_ACCEPTED_ANSWERS,
-            "resume_contract": SATISFACTION_RESUME_CONTRACT,
-        },
-    )
+    existing = guard_pending(backend, "satisfaction")
+    payload = {
+        "kind": "satisfaction",
+        "question": SATISFACTION_QUESTION,
+        "deferred_warning": warning,
+        "accepted_answers": SATISFACTION_ACCEPTED_ANSWERS,
+        "resume_contract": SATISFACTION_RESUME_CONTRACT,
+    }
+    if existing is not None:
+        # Re-presenting the standing question — but the warning is
+        # derived state: refreshed so the user never confirms
+        # Satisfaction on a picture of a session that has moved on.
+        return refresh_pending(backend, payload)
+    return begin_pending(backend, payload)
 
 
 def resume_satisfaction(backend: BackendProtocol, answer: Any) -> dict[str, Any]:

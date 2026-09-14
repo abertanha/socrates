@@ -9,6 +9,8 @@ keeps working; the payload just gained its second field.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class Refusal(ValueError):
     """A wrong-order refusal: the reason and the admissible next verbs.
@@ -22,3 +24,14 @@ class Refusal(ValueError):
         super().__init__(reason)
         self.reason = reason
         self.admissible = list(admissible)
+
+
+def refusal_payload(refusal: Refusal) -> dict[str, Any]:
+    """The refusal as JSON — one writer for both surfaces, so the
+    session adapter and the invocation files emit the same shape."""
+    return {
+        "ok": False,
+        "refused": True,
+        "reason": refusal.reason,
+        "admissible_next": refusal.admissible,
+    }

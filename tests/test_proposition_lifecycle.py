@@ -177,7 +177,7 @@ def test_accept_and_reject_interrupts_honor_a_declined_answer():
     assert r["__interrupt__"][0].value["kind"] == "accept"
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
 
-    declined = agent.invoke(Command(resume="no, hold on"), config=config)
+    declined = agent.invoke(Command(resume="hold on"), config=config)
     # Declined: NOT accepted, and the tool result says so.
     assert _by_id(declined["files"])["p1"]["status"] == "candidate"
     declined_msgs = [

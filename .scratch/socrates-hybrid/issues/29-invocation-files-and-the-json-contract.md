@@ -77,3 +77,80 @@ Full suite: **157 passed** (was 146; +11 new, zero legacy pins changed).
   the session). Stdin carries the JSON when no argument is given; an
   unreadable stdin (no TTY, captured) degrades to no input rather than
   crashing a read verb.
+
+## Review (fixed point `dbe414d..HEAD` — tickets 28+29, user-invoked)
+
+Ten findings, all confirmed by execution against the working tree and
+all fixed. Root fusion: the session adapter (`tools.py`) and the
+contract its payloads advertise (`asking.py`'s `{canonical, raw}` +
+token menus) were two grammars never tested against each other. Gate
+after the cycle: **188 passed** (157 + 31 grammar/rollback/refresh
+pins; three legacy pins adapted in place — two door `answers` lists to
+canonical spelling, one compound decline `resume="no, hold on"` →
+`"hold on"` exact word).
+
+1. **Hedged compounds silently declined** — `_classify_confirmation`'s
+   `startswith("no")` turned "No problem, go ahead" and "not sure" into
+   declines, and "accept" answering an amendment declined it
+   (cross-polarity leaked to non-lifecycle actions). Fixed: declines
+   are exact words only (single-token no/n/nope + the
+   `_DECLINE_WORDS` set); cross-polarity applies solely to
+   accept/reject; everything else refuses (ask-never-guess).
+2. **Iteration re-presented a foreign conflict's question** —
+   `run_iteration` had no subject fingerprint, so `run_iteration("c999")
+   with c1 pending re-presented c1. Fixed: `"subject": conflict.id` on
+   the payload + `guard_pending(kind, conflict_id)` — a foreign or
+   unknown id refuses naming the standing question. Sibling fixed:
+   re-asking Satisfaction refreshed nothing — `ask_satisfaction` now
+   recomputes the derived `deferred_warning` and re-persists it
+   (`asking.refresh_pending`), so the user never confirms on a stale
+   picture.
+3. **The door refused its own advertised token** — `_parse_door_answer`
+   could not produce "not_yet" (underscore), livelocking the session
+   adapter on the exact token the menu lists, and the payload's legacy
+   display list spelled "not yet" (refused by the engine). Fixed: the
+   underscore token recognized; `DOOR_ANSWERS` display list now spells
+   the canonical tokens.
+4. **Session surface refused the contract's own envelope** — tools
+   classified the whole resumed value, so `{canonical, raw}` resumed as
+   advertised mapped to None and refused, while the invocation surface
+   accepted it. Fixed (with 5 and 10): `_session_resume` — one block
+   that crosses `parse_envelope` FIRST, classifies the canonical alone,
+   and rebuilds the envelope with raw as provenance; all 12 resume
+   sites (orchestrator + chapter surfaces) go through it.
+5. **`run_iteration` double-wrapped** — `_envelope(answer, answer)`
+   turned an advertised envelope into canonical-as-dict, refusing the
+   one shape the contract names (probe_batch passed bare — the copies
+   had drifted). Subsumed by `_session_resume` (identity classify for
+   engine-parsed grammars).
+6. **Probe rollback missed non-ValueErrors** — `_apply_resolutions`
+   could raise TypeError (unhashable conflict_id) and escape without
+   `_restore_state`, half-applying the Batch. Fixed: rollback on any
+   `Exception`, re-raised — the transaction no longer depends on the
+   error's class.
+7. **Door and Satisfaction vocabularies out of step** — "enough"/"stop
+   here"/"terminate" routed at the door but refused at the question
+   (infinite loop on a word the system accepted); the "satisf"
+   substring routed "dissatisfied" to Satisfaction. Fixed: the
+   substring rule is dead; "dissatisfied" is a not_yet negation; every
+   word that routes classifies "satisfied" at the question — one
+   vocabulary, two speech acts.
+8. **Refusals flattened on the session surface** — `_ask`/`_conduct`
+   caught `Refusal` (a ValueError subclass) in the generic arm, dropping
+   refused/admissible_next the invocation files emit. Fixed: explicit
+   `Refusal` arm via `refusal_payload` (`refusal.py` — one writer both
+   surfaces share; `invocation.py` now uses it too).
+9. **Truncated-but-valid marker crashed resumes** — `{"kind":
+   "iteration"}` passed read_pending's checks and the resume verbs'
+   subscripts raised raw KeyError. Fixed: `_PENDING_REQUIRED_FIELDS`
+   per kind in `asking.py`; a marker missing its resume's required
+   fields is corruption — self-heals to none, refused as data, fresh
+   asks work.
+10. **The boundary was hand-copied** — `_conduct`/`_ask` byte-identical
+    except-bodies, the ask→interrupt→resume block pasted 10×, four
+    envelope writers. Fixed: `_session_resume` collapses the block
+    (envelope stays single-writer via `_envelope`), the Refusal arms
+    share one shape, and `tools.py`'s dead `store` local is gone. The
+    review's refuted candidates recorded: `OPENING_QUESTION`/
+    `SATISFACTION_QUESTION` imports are live re-exports consumed by
+    five test files.

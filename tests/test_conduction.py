@@ -43,7 +43,7 @@ from socrates.paths import (
 )
 from socrates.tools import SATISFACTION_QUESTION
 
-DOOR_ANSWERS = ["close", "not yet", "satisfaction"]
+DOOR_ANSWERS = ["close", "not_yet", "satisfaction"]
 
 _ALL_COMPLETED = (
     "requirements",

@@ -101,12 +101,31 @@ class AskRefusal(Exception):
         self.payload = payload
 
 
+# The fields each pending kind must carry for its resume to be
+# answerable — the shape contract of the persisted payload. A marker
+# missing them (a truncated write, a hand edit, an older schema) is no
+# question anyone can answer: it self-heals like any other corruption
+# instead of raising a raw KeyError out of a resume.
+_PENDING_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "opening": (),
+    "amend_need": ("proposed_need", "reason"),
+    "accept": ("proposition_id",),
+    "reject": ("proposition_id", "reason"),
+    "door": ("activity",),
+    "satisfaction": (),
+    "probe": ("batch_id",),
+    "iteration": ("conflict_id", "proposed_activity"),
+}
+
+
 def read_pending(backend: BackendProtocol) -> dict[str, Any] | None:
     """The persisted pending-question payload, or ``None`` when none stands.
 
     A corrupt marker is no question anyone can answer: it self-heals to
     none (the file is deleted) rather than deadlocking every later ask
-    and resume on a record that cannot be honored.
+    and resume on a record that cannot be honored. Corruption is
+    unparseable JSON, a non-dict, a kindless dict — and a dict whose kind
+    is missing its resume's required fields.
     """
     result = backend.read(PENDING_QUESTION_PATH)
     if result.error or result.file_data is None:
@@ -120,6 +139,12 @@ def read_pending(backend: BackendProtocol) -> dict[str, Any] | None:
         backend.delete(PENDING_QUESTION_PATH)
         return None
     if not isinstance(pending, dict) or "kind" not in pending:
+        backend.delete(PENDING_QUESTION_PATH)
+        return None
+    required = _PENDING_REQUIRED_FIELDS.get(pending["kind"])
+    if required is None or any(
+        pending.get(field) is None for field in required
+    ):
         backend.delete(PENDING_QUESTION_PATH)
         return None
     return pending
@@ -142,6 +167,17 @@ def begin_pending(backend: BackendProtocol, payload: dict[str, Any]) -> dict[str
     ) == payload.get("subject"):
         return existing
     raise AskRefusal(_one_pending_payload(existing, payload["kind"]))
+
+
+def refresh_pending(backend: BackendProtocol, payload: dict[str, Any]) -> dict[str, Any]:
+    """Overwrite the standing question with a refreshed payload.
+
+    The question itself re-presents unchanged (same kind, same subject,
+    same words); only its derived context is brought current — an
+    advisory warning recomputed, never a stale picture of the session.
+    """
+    backend.write(PENDING_QUESTION_PATH, json.dumps(payload, indent=2))
+    return payload
 
 
 def require_pending(backend: BackendProtocol, kind: str) -> dict[str, Any]:

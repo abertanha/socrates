@@ -573,7 +573,11 @@ class InferenceEngine:
         snapshot = self._snapshot_state()
         try:
             applied = self._apply_resolutions(pending["batch_id"], canonical)
-        except ValueError:
+        except Exception:
+            # Transactional across the split on ANY failure — a TypeError
+            # from a malformed resolution is as unwelcome mid-apply as a
+            # ValueError: the Model rolls back to the asked state and the
+            # Batch stays presented for a repaired resume.
             self._restore_state(snapshot)
             raise
         clear_pending(self._backend)
@@ -588,7 +592,7 @@ class InferenceEngine:
     def run_iteration(self, conflict_id: str) -> dict[str, Any]:
         """ASK: hand an L4 Conflict to Iteration — propose the activity and
         return the pending confirmation question (AskHuman, ticket 28)."""
-        existing = guard_pending(self._backend, "iteration")
+        existing = guard_pending(self._backend, "iteration", conflict_id)
         if existing is not None:
             return existing
 
@@ -613,6 +617,7 @@ class InferenceEngine:
             self._backend,
             {
                 "kind": "iteration",
+                "subject": conflict.id,
                 "conflict_id": conflict.id,
                 "proposed_activity": proposed,
                 "summary": conflict.summary,
