@@ -24,8 +24,11 @@ INVOCATIONS = (
     "probe",
     "iteration",
     "defer",
+    # The session's end — composed by the engine (ticket 31)
+    "materialize",
     # Reads
     "pipeline_status",
     "current_pass",
     "pending_question",
+    "audit_charge",
 )

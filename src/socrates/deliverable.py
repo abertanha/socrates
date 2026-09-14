@@ -7,7 +7,8 @@ Settled layout (ticket 11):
 
 Composition draws Accepted Propositions only, filtered by
 Implementation-Independence (structure in; technologies and concrete
-parameter values out). Part assignment:
+parameter values out), and ships each statement verbatim with the
+ground identifier it derives from (ticket 31). Part assignment:
   - Glossary  ← requirements + definitional domain_modeling
   - Structure ← remaining domain_modeling
   - Rules     ← behavioral_specification
@@ -100,18 +101,23 @@ def _part_for(prop: Proposition) -> str | None:
     return None
 
 
-def _bullet_block(title: str, need: str | None, statements: Iterable[str]) -> str:
+def _cited_row(statement: str, prop_id: str) -> str:
+    """A shipped row and the ground entry it derives from (ticket 31:
+    every line traces to the Model record, entry by entry)."""
+    return f"- {statement} _(ground: {prop_id})_"
+
+
+def _bullet_block(title: str, need: str | None, rows: Iterable[str]) -> str:
     lines = [f"# {title}", ""]
     if need:
         lines.extend(["## Need", "", need.strip(), ""])
     lines.append("## Propositions")
     lines.append("")
-    items = list(statements)
+    items = list(rows)
     if not items:
         lines.append("_(none)_")
     else:
-        for statement in items:
-            lines.append(f"- {statement}")
+        lines.extend(items)
     lines.append("")
     return "\n".join(lines)
 
@@ -137,11 +143,11 @@ class DeliverableComposer:
                 continue
             part = _part_for(prop)
             if part == "glossary":
-                glossary.append(prop.statement)
+                glossary.append(_cited_row(prop.statement, prop.id))
             elif part == "structure":
-                structure.append(prop.statement)
+                structure.append(_cited_row(prop.statement, prop.id))
             elif part == "rules":
-                rules.append(prop.statement)
+                rules.append(_cited_row(prop.statement, prop.id))
 
         contents = {
             DELIVERABLE_GLOSSARY_PATH: _bullet_block("Glossary", need, glossary),

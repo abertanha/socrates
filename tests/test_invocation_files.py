@@ -64,8 +64,10 @@ EXPECTED_MUTATIONS = {
     "door",
     "satisfaction",
     "resume",
+    "materialize",
 }
-EXPECTED_READS = {"pipeline_status", "current_pass", "pending_question"}
+EXPECTED_READS = {"pipeline_status", "current_pass", "pending_question",
+                  "audit_charge"}
 
 
 def test_the_verb_surface_is_the_engine_plus_the_reads():

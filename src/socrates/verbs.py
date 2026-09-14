@@ -429,6 +429,31 @@ def resume_satisfaction(backend: BackendProtocol, answer: Any) -> dict[str, Any]
     }
 
 
+def materialize_deliverable(backend: BackendProtocol) -> dict[str, Any]:
+    """Compose the deliverable from the recorded ground (ticket 31).
+
+    The engine's authorship: every accepted statement ships verbatim,
+    each row citing the ground identifier it derives from — the
+    dropped-relationship class dies by construction. Composition is a
+    pure derivation over the ground, so calling it again recomposes —
+    the deliverable audit's cure for a finding runs through here, never
+    through a hand edit.
+    """
+    if read_need(backend) is None:
+        raise Refusal(
+            "No Need is recorded yet: materialization derives the "
+            "deliverable from the recorded ground, and there is none.",
+            ["opening"],
+        )
+    paths = DeliverableComposer(backend).materialize()
+    joined = ", ".join(sorted(paths))
+    return {
+        "ok": True,
+        "materialized": sorted(paths),
+        "message": f"Conceptual Domain Model composed at {joined}.",
+    }
+
+
 # --- The one resume: dispatched on the pending kind -----------------------------
 
 
