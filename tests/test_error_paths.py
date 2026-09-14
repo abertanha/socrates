@@ -102,7 +102,7 @@ def test_malformed_probe_resume_rolls_back_and_re_presents(tmp_path):
     assert asked["batch_id"] == "b2"
 
     # First resolution is valid, second is garbage — nothing may persist.
-    with pytest.raises(ValueError, match="Unknown Probe action"):
+    with pytest.raises(ValueError, match="Duplicate resolution"):
         engine.probe_resume(
             {
                 "resolutions": [

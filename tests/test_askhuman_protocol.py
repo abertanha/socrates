@@ -264,6 +264,34 @@ def test_re_asking_the_same_kind_re_presents_unchanged(tmp_path):
     assert len(_load(backend, BATCHES_PATH)["batches"]) == 1
 
 
+def test_re_asking_the_same_kind_about_a_different_subject_refuses(tmp_path):
+    backend = _backend(tmp_path)
+    backend.write(NEED_PATH, "Marketplace checkout payments domain.")
+    _propose(backend, "Payment status is always Authorized or Settled.", "domain_modeling")
+    _propose(backend, "A Payment belongs to exactly one Order.", "requirements")
+    ask_accept(backend, "p1")
+
+    # Same kind, different Proposition: a DIFFERENT question — refused,
+    # the pending one named (review fix: idempotence never crosses subjects).
+    with pytest.raises(AskRefusal) as exc:
+        ask_accept(backend, "p2")
+    assert exc.value.payload["pending"]["kind"] == "accept"
+
+    with pytest.raises(AskRefusal):
+        ask_door(backend, "requirements")
+
+
+def test_corrupt_pending_marker_self_heals_to_no_question(tmp_path):
+    backend = _backend(tmp_path)
+    backend.write(PENDING_QUESTION_PATH, "{truncated json")
+
+    # A corrupt marker is no question anyone can answer: it heals instead
+    # of deadlocking every later ask and resume (review fix).
+    assert read_pending(backend) is None
+    payload = ask_opening(backend)
+    assert payload["kind"] == "opening"
+
+
 # --- Resume: {canonical, raw} -------------------------------------------------
 
 
@@ -355,7 +383,14 @@ def test_iteration_ask_then_canonical_activity_resume(tmp_path):
     assert payload["kind"] == "iteration"
     assert payload["conflict_id"] == "c1"
     assert payload["proposed_activity"] == "requirements"
-    assert [e["token"] for e in payload["accepted_answers"]] == ["confirm", "activity"]
+    # The menu is exactly what the validator admits (review fix): confirm,
+    # or an activity NAME — no third grammar.
+    assert [e["token"] for e in payload["accepted_answers"]] == [
+        "confirm",
+        "requirements",
+        "domain_modeling",
+        "behavioral_specification",
+    ]
 
     result = engine.iteration_resume(
         {"canonical": {"activity": "domain_modeling"}, "raw": "reabra a modelagem"}
@@ -448,7 +483,7 @@ def test_probe_malformed_resume_rolls_back_and_keeps_the_question(tmp_path):
     engine = _l1_engine(backend)
     engine.probe_batch()
 
-    with pytest.raises(ValueError, match="Unknown Probe action"):
+    with pytest.raises(ValueError, match="Duplicate resolution"):
         engine.probe_resume(
             {
                 "canonical": {
@@ -486,6 +521,65 @@ def test_probe_malformed_resume_rolls_back_and_keeps_the_question(tmp_path):
     )
     assert result["applied"][0]["action"] == "dismiss"
     assert read_pending(backend) is None
+
+
+def test_lifecycle_apply_failure_keeps_the_question_pending(tmp_path):
+    backend = _backend(tmp_path)
+    backend.write(NEED_PATH, "Marketplace checkout payments domain.")
+    store = PropositionStore(backend)
+    store.propose("Payment status is always Authorized or Settled.", "domain_modeling")
+    ask_accept(backend, "p1", via_proposition_id="p9")
+
+    # The apply fails (unknown via-proposition), but the answer is not
+    # consumed: the question stays pending (review fix — as the Probe's
+    # rollback keeps its Batch).
+    result = resume_accept(backend, {"canonical": "confirm", "raw": "yes"})
+    assert result["ok"] is False
+    assert "error" in result
+    assert read_pending(backend)["kind"] == "accept"
+
+    # The conductor repairs in conversation — here, declining clears the
+    # question without re-asking the user.
+    result = resume_accept(backend, {"canonical": "decline", "raw": "no"})
+    assert result["declined"] is True
+    assert read_pending(backend) is None
+
+
+def test_door_close_failure_keeps_the_question_pending(tmp_path):
+    backend = _backend(tmp_path)
+    backend.write(
+        PIPELINE_PATH,
+        json.dumps({"completed": [], "active": "domain_modeling"}),
+    )
+    ask_door(backend, "requirements")
+
+    # Precedence violated: the close fails, the answer is not consumed.
+    result = resume_door(backend, {"canonical": "close", "raw": "close"})
+    assert result["ok"] is False
+    assert "still active" in result["error"]
+    assert read_pending(backend)["kind"] == "door"
+
+
+def test_probe_duplicate_resolution_refuses_and_rolls_back(tmp_path):
+    backend = _backend(tmp_path)
+    engine = _l1_engine(backend)
+    engine.probe_batch()
+
+    with pytest.raises(ValueError, match="Duplicate resolution"):
+        engine.probe_resume(
+            {
+                "canonical": {
+                    "resolutions": [
+                        {"conflict_id": "c1", "action": "dismiss"},
+                        {"conflict_id": "c1", "action": "dismiss"},
+                    ]
+                },
+                "raw": "…",
+            }
+        )
+    # Rollback to the asked state, question intact.
+    assert _load(backend, CONFLICTS_PATH)["conflicts"][0]["status"] == "open"
+    assert read_pending(backend)["kind"] == "probe"
 
 
 # --- The door's third answer opens the Satisfaction question ------------------

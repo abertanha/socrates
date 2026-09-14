@@ -28,11 +28,9 @@ from socrates.paths import PENDING_QUESTION_PATH
 
 # Canonical tokens — closed, English, language-agnostic core. The session
 # language lives outside the engine; free replies are classified into
-# these tokens by the conductor, with the raw words preserved.
-DOOR_TOKENS: tuple[str, ...] = ("close", "not_yet", "satisfaction")
-CONFIRM_TOKENS: tuple[str, ...] = ("confirm", "decline")
-SATISFACTION_TOKENS: tuple[str, ...] = ("satisfied", "not_satisfied")
-
+# these tokens by the conductor, with the raw words preserved. One home:
+# the token tuples are derived from the accepted-answers menus below, so
+# the menu a conductor sees is exactly what the validator admits.
 _ENVELOPE = (
     "Resume with {canonical, raw} — the canonical token drives the "
     "machine; the raw words ride as provenance."
@@ -53,6 +51,10 @@ FREE_TEXT_RESUME_CONTRACT = f"{_ENVELOPE} canonical is the answer text itself."
 
 def _answers(*pairs: tuple[str, str]) -> list[dict[str, str]]:
     return [{"token": token, "meaning": meaning} for token, meaning in pairs]
+
+
+def _tokens(accepted_answers: list[dict[str, str]]) -> tuple[str, ...]:
+    return tuple(entry["token"] for entry in accepted_answers)
 
 
 DOOR_ACCEPTED_ANSWERS = _answers(
@@ -81,6 +83,10 @@ FREE_TEXT_ACCEPTED_ANSWERS = [
     {"token": "free-text", "meaning": "the answer in the user's own words"}
 ]
 
+DOOR_TOKENS = _tokens(DOOR_ACCEPTED_ANSWERS)
+CONFIRM_TOKENS = _tokens(CONFIRM_ACCEPTED_ANSWERS)
+SATISFACTION_TOKENS = _tokens(SATISFACTION_ACCEPTED_ANSWERS)
+
 
 class AskRefusal(Exception):
     """A structured refusal of the asking protocol — JSON-ready.
@@ -96,28 +102,44 @@ class AskRefusal(Exception):
 
 
 def read_pending(backend: BackendProtocol) -> dict[str, Any] | None:
-    """The persisted pending-question payload, or ``None`` when none stands."""
+    """The persisted pending-question payload, or ``None`` when none stands.
+
+    A corrupt marker is no question anyone can answer: it self-heals to
+    none (the file is deleted) rather than deadlocking every later ask
+    and resume on a record that cannot be honored.
+    """
     result = backend.read(PENDING_QUESTION_PATH)
     if result.error or result.file_data is None:
         return None
     content = result.file_data["content"]
     if not content.strip():
         return None
-    return json.loads(content)
+    try:
+        pending = json.loads(content)
+    except json.JSONDecodeError:
+        backend.delete(PENDING_QUESTION_PATH)
+        return None
+    if not isinstance(pending, dict) or "kind" not in pending:
+        backend.delete(PENDING_QUESTION_PATH)
+        return None
+    return pending
 
 
 def begin_pending(backend: BackendProtocol, payload: dict[str, Any]) -> dict[str, Any]:
     """Persist the pending question and return its payload.
 
-    Re-asking the same kind re-presents the persisted question unchanged
-    (idempotence — a Batch is never created twice for one question); any
-    other asking verb refuses naming the pending one.
+    Re-asking the same kind about the same subject re-presents the
+    persisted question unchanged (idempotence — a Batch is never created
+    twice for one question); the same kind about a DIFFERENT subject, or
+    any other kind, refuses naming the pending one.
     """
     existing = read_pending(backend)
     if existing is None:
         backend.write(PENDING_QUESTION_PATH, json.dumps(payload, indent=2))
         return payload
-    if existing["kind"] == payload["kind"]:
+    if existing["kind"] == payload["kind"] and existing.get(
+        "subject"
+    ) == payload.get("subject"):
         return existing
     raise AskRefusal(_one_pending_payload(existing, payload["kind"]))
 
@@ -139,16 +161,21 @@ def require_pending(backend: BackendProtocol, kind: str) -> dict[str, Any]:
     return existing
 
 
-def guard_pending(backend: BackendProtocol, kind: str) -> dict[str, Any] | None:
+def guard_pending(
+    backend: BackendProtocol,
+    kind: str,
+    subject: str | None = None,
+) -> dict[str, Any] | None:
     """The re-presented payload when ``kind`` re-asks its own pending
-    question; ``None`` when no question is pending; refusal for any other
-    kind. Askers call this BEFORE mutating state, so a re-ask never
+    question (same ``subject``); ``None`` when no question is pending;
+    refusal for any other kind — or the same kind about a different
+    subject. Askers call this BEFORE mutating state, so a re-ask never
     duplicates its own work (a Batch is never created twice for one
     question)."""
     existing = read_pending(backend)
     if existing is None:
         return None
-    if existing["kind"] == kind:
+    if existing["kind"] == kind and existing.get("subject") == subject:
         return existing
     raise AskRefusal(_one_pending_payload(existing, kind))
 

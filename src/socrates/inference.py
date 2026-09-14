@@ -84,20 +84,26 @@ PROBE_RESUME_CONTRACT = (
     "resolving every Conflict of the Batch."
 )
 
-# The Iteration question's accepted answers — confirm the proposal, or
-# name a different Modeling Activity to reopen instead.
-ITERATION_ACCEPTED_ANSWERS: list[dict[str, str]] = [
-    {"token": "confirm", "meaning": "reopen the proposed Modeling Activity"},
-    {
-        "token": "activity",
-        "meaning": "reopen a different Modeling Activity "
-        "— the token's value names it",
-    },
-]
-ITERATION_RESUME_CONTRACT = (
-    "Resume with {canonical, raw}; canonical is `true` (confirm the "
+# The Iteration question's accepted answers are the menu the validator
+# actually admits (review fix): `confirm` takes the proposal, an activity
+# NAME reopens that one instead — no third grammar.
+_ITERATION_RESUME_CONTRACT = (
+    "Resume with {canonical, raw}; canonical is `confirm` (take the "
     "proposal) or the name of a Modeling Activity to reopen instead."
 )
+
+
+def _iteration_answers(proposed: ModelingActivity) -> list[dict[str, str]]:
+    return [
+        {
+            "token": "confirm",
+            "meaning": f"reopen '{proposed}' — the proposed Modeling Activity",
+        },
+        *[
+            {"token": activity, "meaning": f"reopen '{activity}' instead"}
+            for activity in ACTIVITIES_IN_ORDER
+        ],
+    ]
 VALID_EDGES: frozenset[str] = frozenset(
     {"zero", "one", "many", "none", "intersection"}
 )
@@ -616,8 +622,8 @@ class InferenceEngine:
                     f"L4 Conflict {conflict.id} invalidates established beliefs. "
                     f"Confirm reopening Modeling Activity '{proposed}'?"
                 ),
-                "accepted_answers": ITERATION_ACCEPTED_ANSWERS,
-                "resume_contract": ITERATION_RESUME_CONTRACT,
+                "accepted_answers": _iteration_answers(proposed),
+                "resume_contract": _ITERATION_RESUME_CONTRACT,
             },
         )
 
@@ -817,6 +823,11 @@ class InferenceEngine:
             if conflict_id not in batch_conflict_ids:
                 raise ValueError(
                     f"Conflict {conflict_id!r} is not in open Batch {batch_id}"
+                )
+            if conflict_id in resolved_ids:
+                raise ValueError(
+                    f"Duplicate resolution for {conflict_id!r} — one entry "
+                    "per Conflict of the Batch"
                 )
             conflict = by_id[conflict_id]
             if conflict.level == "L4":

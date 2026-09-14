@@ -129,6 +129,7 @@ def ask_amend_need(
         backend,
         {
             "kind": "amend_need",
+            "subject": f"{proposed_need}\n{reason}",
             "current_need": current,
             "proposed_need": proposed_need,
             "reason": reason,
@@ -177,6 +178,7 @@ def ask_accept(
         backend,
         {
             "kind": "accept",
+            "subject": proposition_id,
             "proposition_id": proposition_id,
             "via_proposition_id": via_proposition_id or None,
             "question": (
@@ -203,6 +205,7 @@ def ask_reject(
         backend,
         {
             "kind": "reject",
+            "subject": proposition_id,
             "proposition_id": proposition_id,
             "reason": reason,
             "question": (
@@ -239,7 +242,6 @@ def _resume_lifecycle(
             **_declined(action, proposition_id, status),
             "answer": _answer(canonical, raw),
         }
-    clear_pending(backend)
     try:
         if kind == "accept":
             prop = store.accept(
@@ -249,7 +251,11 @@ def _resume_lifecycle(
         else:
             prop = store.reject(proposition_id, pending["reason"])
     except (ValueError, KeyError) as exc:
+        # The apply failed but the answer was not consumed: the question
+        # stays pending (as the Probe's rollback keeps its Batch), so the
+        # conductor can repair and re-resume instead of re-asking the user.
         return {"ok": False, "error": str(exc), "answer": _answer(canonical, raw)}
+    clear_pending(backend)
     return {**proposition_payload(prop), "answer": _answer(canonical, raw)}
 
 
@@ -261,6 +267,7 @@ def ask_door(backend: BackendProtocol, activity: ModelingActivity) -> dict[str, 
         backend,
         {
             "kind": "door",
+            "subject": activity,
             "activity": activity,
             "question": f"Confirm closing Modeling Activity '{activity}'?",
             "answers": list(DOOR_ANSWERS),
@@ -298,7 +305,6 @@ def resume_door(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
             "pending": follow,
             "answer": answer_echo,
         }
-    clear_pending(backend)
     pipeline = PipelineStore(backend)
     try:
         # A chapter with no Propositions is vacuously quiet (D3): its
@@ -306,7 +312,10 @@ def resume_door(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
         pipeline.begin(activity)
         pipeline.complete(activity)
     except ValueError as exc:
+        # The close failed but the answer was not consumed: the question
+        # stays pending, so the conductor can repair and re-resume.
         return {"ok": False, "error": str(exc), "answer": answer_echo}
+    clear_pending(backend)
     return {
         "ok": True,
         "completed": activity,

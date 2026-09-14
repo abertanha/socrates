@@ -66,6 +66,7 @@ _AFFIRMATIVE = frozenset(
         "satisfaction",
         "i am satisfied",
         "i'm satisfied",
+        "im satisfied",
     }
 )
 

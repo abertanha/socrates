@@ -253,6 +253,29 @@ def _conduct(resume: Callable[[Any], dict], answer: Any) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _ask(ask: Callable[[], dict]) -> dict:
+    """Run one ask over the AskHuman boundary.
+
+    A protocol refusal (a question already pending) and a semantic
+    ``ValueError`` both surface as the structured JSON the conductor
+    repairs — ``AskRefusal`` is not a ``ValueError``, so catching it here
+    is what keeps the one-pending refusal from escaping as a raw
+    traceback (review fix).
+    """
+    try:
+        return ask()
+    except AskRefusal as refusal:
+        return refusal.payload
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _envelope(answer: Any, canonical: Any) -> dict:
+    """The {canonical, raw} resume envelope — one writer, no hand-built
+    literals drifting."""
+    return {"canonical": canonical, "raw": answer}
+
+
 def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     """Tools for the main Socrates orchestrator.
 
@@ -270,13 +293,15 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         Call this before writing any prose of your own — it is the first thing
         the user sees, and it already does the greeting for you.
         """
-        payload = ask_opening(backend)
+        payload = _ask(lambda: ask_opening(backend))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         canonical = answer.strip() if isinstance(answer, str) else None
         return json.dumps(
             _conduct(
                 lambda a: resume_opening(backend, a),
-                {"canonical": canonical or None, "raw": answer},
+                _envelope(answer, canonical or None),
             )
         )
 
@@ -288,12 +313,14 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         an affirmative answer, materializes the Conceptual Domain Model as
         Glossary + Structure + Rules under /model/deliverable/.
         """
-        payload = ask_satisfaction(backend)
+        payload = _ask(lambda: ask_satisfaction(backend))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
             _conduct(
                 lambda a: resume_satisfaction(backend, a),
-                {"canonical": _classify_satisfaction(answer), "raw": answer},
+                _envelope(answer, _classify_satisfaction(answer)),
             )
         )
 
@@ -307,15 +334,14 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         it (the superseded shape and the reason survive, newest last). A
         declined amendment leaves the Need exactly as it was.
         """
-        try:
-            payload = ask_amend_need(backend, proposed_need, reason)
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(lambda: ask_amend_need(backend, proposed_need, reason))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
             _conduct(
                 lambda a: resume_amend_need(backend, a),
-                {"canonical": _classify_confirmation(answer, "amend"), "raw": answer},
+                _envelope(answer, _classify_confirmation(answer, "amend")),
             )
         )
 
@@ -341,14 +367,15 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
 
         Optional via_proposition_id marks indirect Acceptance (foundation for cascades).
         """
-        try:
-            payload = ask_accept(backend, proposition_id, via_proposition_id)
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(
+            lambda: ask_accept(backend, proposition_id, via_proposition_id)
+        )
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         result = _conduct(
             lambda a: resume_accept(backend, a),
-            {"canonical": _classify_confirmation(answer, "accept"), "raw": answer},
+            _envelope(answer, _classify_confirmation(answer, "accept")),
         )
         if result.get("ok"):
             raised = inference.touch_propositions(proposition_id)
@@ -359,14 +386,13 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     @tool
     def reject_proposition(proposition_id: str, reason: str) -> str:
         """Reject a Proposition with an explicit reason; records it in the Rejection Guardrail."""
-        try:
-            payload = ask_reject(backend, proposition_id, reason)
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(lambda: ask_reject(backend, proposition_id, reason))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         result = _conduct(
             lambda a: resume_reject(backend, a),
-            {"canonical": _classify_confirmation(answer, "reject"), "raw": answer},
+            _envelope(answer, _classify_confirmation(answer, "reject")),
         )
         if result.get("ok"):
             raised = inference.touch_propositions(proposition_id)
@@ -377,14 +403,13 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     @tool
     def run_iteration(conflict_id: str) -> str:
         """Hand an L4 Conflict to Iteration: propose phase, confirm, reopen activity."""
-        try:
-            payload = inference.run_iteration(conflict_id)
-        except (ValueError, KeyError) as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(lambda: inference.run_iteration(conflict_id))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         result = _conduct(
             lambda a: inference.iteration_resume(a),
-            {"canonical": answer, "raw": answer},
+            _envelope(answer, answer),
         )
         return json.dumps({"ok": True, **result})
 
@@ -476,10 +501,9 @@ def build_pulse_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         transactionally — a malformed resume rolls back and re-presents.
         L4 Conflicts are not Probe-resolved — use run_iteration.
         """
-        try:
-            payload = inference.probe_batch()
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(lambda: inference.probe_batch())
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         result = _conduct(lambda a: inference.probe_resume(a), answer)
         return json.dumps({"ok": True, **result})
@@ -546,28 +570,28 @@ def build_activity_tools(
         proposition_id: str,
         via_proposition_id: str = "",
     ) -> str:
-        try:
-            payload = ask_accept(backend, proposition_id, via_proposition_id)
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(
+            lambda: ask_accept(backend, proposition_id, via_proposition_id)
+        )
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
             _conduct(
                 lambda a: resume_accept(backend, a),
-                {"canonical": _classify_confirmation(answer, "accept"), "raw": answer},
+                _envelope(answer, _classify_confirmation(answer, "accept")),
             )
         )
 
     def reject_proposition(proposition_id: str, reason: str) -> str:
-        try:
-            payload = ask_reject(backend, proposition_id, reason)
-        except ValueError as exc:
-            return json.dumps({"ok": False, "error": str(exc)})
+        payload = _ask(lambda: ask_reject(backend, proposition_id, reason))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         return json.dumps(
             _conduct(
                 lambda a: resume_reject(backend, a),
-                {"canonical": _classify_confirmation(answer, "reject"), "raw": answer},
+                _envelope(answer, _classify_confirmation(answer, "reject")),
             )
         )
 
@@ -582,11 +606,13 @@ def build_activity_tools(
         valve stays live), "satisfaction" routes to the Satisfaction flow
         WITHOUT closing the chapter.
         """
-        payload = ask_door(backend, activity)
+        payload = _ask(lambda: ask_door(backend, activity))
+        if payload.get("refused") or payload.get("ok") is False:
+            return json.dumps(payload)
         answer = interrupt(payload)
         result = _conduct(
             lambda a: resume_door(backend, a),
-            {"canonical": _parse_door_answer(answer), "raw": answer},
+            _envelope(answer, _parse_door_answer(answer)),
         )
         if result.get("door") == "satisfaction" and "pending" in result:
             # The door's third answer chains the Satisfaction question —
@@ -595,10 +621,7 @@ def build_activity_tools(
             follow_answer = interrupt(follow)
             result["satisfaction"] = _conduct(
                 lambda a: resume_satisfaction(backend, a),
-                {
-                    "canonical": _classify_satisfaction(follow_answer),
-                    "raw": follow_answer,
-                },
+                _envelope(follow_answer, _classify_satisfaction(follow_answer)),
             )
         return json.dumps(result)
 
