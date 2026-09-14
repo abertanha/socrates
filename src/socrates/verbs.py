@@ -33,9 +33,12 @@ from socrates.asking import (
     SATISFACTION_ACCEPTED_ANSWERS,
     SATISFACTION_RESUME_CONTRACT,
     SATISFACTION_TOKENS,
+    AskRefusal,
     begin_pending,
     clear_pending,
+    guard_pending,
     parse_envelope,
+    read_pending,
     require_pending,
     token_refusal,
     validate_token,
@@ -47,6 +50,7 @@ from socrates.opening import OPENING_GREETING, OPENING_QUESTION, render_opening
 from socrates.paths import NEED_PATH
 from socrates.pipeline import ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore, proposition_payload
+from socrates.refusal import Refusal
 
 # The door's three answers (ticket 17 / D3-D4), kept for the payload's
 # legacy display list: close the chapter, keep it open, or route to the
@@ -60,6 +64,25 @@ SATISFACTION_QUESTION = (
 
 def _answer(canonical: Any, raw: Any) -> dict[str, Any]:
     return {"canonical": canonical, "raw": raw}
+
+
+def propose(
+    backend: BackendProtocol,
+    statement: str,
+    activity: ModelingActivity,
+    *,
+    touch: bool = False,
+) -> dict[str, Any]:
+    """Propose a Proposition — the orchestrator-style surface re-raises
+    the deferred Conflicts its new ground touches (``touch=True``); the
+    chapter surface does not (ticket 17's one-regime ruling)."""
+    prop = PropositionStore(backend).propose(statement, activity=activity)
+    payload = proposition_payload(prop)
+    if touch:
+        raised = InferenceEngine(backend).touch_propositions(prop.id)
+        if raised:
+            payload["re_raised_conflict_ids"] = [c.id for c in raised]
+    return payload
 
 
 def _declined(action: str, proposition_id: str, status: str) -> dict[str, Any]:
@@ -172,6 +195,9 @@ def ask_accept(
     proposition_id: str,
     via_proposition_id: str = "",
 ) -> dict[str, Any]:
+    # The one-pending law negotiates first: a question already standing is
+    # named by the refusal even when the new ask is itself mis-addressed.
+    guard_pending(backend, "accept", proposition_id)
     store = PropositionStore(backend)
     store.get(proposition_id)  # never ask the user about an unknown Proposition
     return begin_pending(
@@ -190,8 +216,13 @@ def ask_accept(
     )
 
 
-def resume_accept(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
-    return _resume_lifecycle(backend, answer, "accept")
+def resume_accept(
+    backend: BackendProtocol,
+    answer: Any,
+    *,
+    touch: bool = False,
+) -> dict[str, Any]:
+    return _resume_lifecycle(backend, answer, "accept", touch=touch)
 
 
 def ask_reject(
@@ -199,6 +230,7 @@ def ask_reject(
     proposition_id: str,
     reason: str,
 ) -> dict[str, Any]:
+    guard_pending(backend, "reject", proposition_id)
     store = PropositionStore(backend)
     store.get(proposition_id)
     return begin_pending(
@@ -217,14 +249,21 @@ def ask_reject(
     )
 
 
-def resume_reject(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
-    return _resume_lifecycle(backend, answer, "reject")
+def resume_reject(
+    backend: BackendProtocol,
+    answer: Any,
+    *,
+    touch: bool = False,
+) -> dict[str, Any]:
+    return _resume_lifecycle(backend, answer, "reject", touch=touch)
 
 
 def _resume_lifecycle(
     backend: BackendProtocol,
     answer: Any,
     kind: str,
+    *,
+    touch: bool = False,
 ) -> dict[str, Any]:
     pending = require_pending(backend, kind)
     canonical, raw = parse_envelope(answer)
@@ -256,7 +295,14 @@ def _resume_lifecycle(
         # conductor can repair and re-resume instead of re-asking the user.
         return {"ok": False, "error": str(exc), "answer": _answer(canonical, raw)}
     clear_pending(backend)
-    return {**proposition_payload(prop), "answer": _answer(canonical, raw)}
+    payload = proposition_payload(prop)
+    if touch:
+        # The orchestrator-style surface re-raises the deferred Conflicts
+        # the applied ground touches; the chapter surface does not.
+        raised = InferenceEngine(backend).touch_propositions(proposition_id)
+        if raised:
+            payload["re_raised_conflict_ids"] = [c.id for c in raised]
+    return {**payload, "answer": _answer(canonical, raw)}
 
 
 # --- The chapter door ------------------------------------------------------------
@@ -376,3 +422,54 @@ def resume_satisfaction(backend: BackendProtocol, answer: Any) -> dict[str, Any]
         ),
         "answer": answer_echo,
     }
+
+
+# --- The one resume: dispatched on the pending kind -----------------------------
+
+
+def resume_pending(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
+    """Resume whichever question is pending — one entry, per kind.
+
+    The pending payload carries its kind, so the caller never has to know
+    which resume verb matches: it answers the question it was shown. The
+    invocation surface resumes orchestrator-style — accepts and rejections
+    re-raise the deferred Conflicts the applied ground touches
+    (``touch=True``, ticket 17's one-regime ruling).
+    """
+    pending = read_pending(backend)
+    if pending is None:
+        raise AskRefusal(
+            {
+                "ok": False,
+                "refused": True,
+                "reason": "No pending question to resume",
+                "pending": None,
+                "ask_again": False,
+            }
+        )
+    kind = pending["kind"]
+    if kind == "probe":
+        result = InferenceEngine(backend).probe_resume(answer)
+    elif kind == "iteration":
+        result = InferenceEngine(backend).iteration_resume(answer)
+    elif kind == "accept":
+        result = resume_accept(backend, answer, touch=True)
+    elif kind == "reject":
+        result = resume_reject(backend, answer, touch=True)
+    elif kind == "opening":
+        result = resume_opening(backend, answer)
+    elif kind == "amend_need":
+        result = resume_amend_need(backend, answer)
+    elif kind == "door":
+        result = resume_door(backend, answer)
+    elif kind == "satisfaction":
+        result = resume_satisfaction(backend, answer)
+    else:
+        raise Refusal(
+            f"Pending question of unknown kind {kind!r}",
+            ["pending_question"],
+        )
+    # The engine's apply results state their success as data; the Probe's
+    # and Iteration's ride bare — the resume door normalizes them.
+    result.setdefault("ok", True)
+    return result

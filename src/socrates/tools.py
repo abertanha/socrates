@@ -37,6 +37,7 @@ from socrates.verbs import (
     ask_opening,
     ask_reject,
     ask_satisfaction,
+    propose as propose_verb,
     resume_accept,
     resume_amend_need,
     resume_door,
@@ -349,13 +350,9 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
     def propose_proposition(statement: str, activity: ModelingActivity) -> str:
         """Propose a Proposition tagged with the Modeling Activity that produced it."""
         try:
-            prop = store.propose(statement, activity=activity)
+            payload = propose_verb(backend, statement, activity, touch=True)
         except ValueError as exc:
             return json.dumps({"ok": False, "error": str(exc)})
-        raised = inference.touch_propositions(prop.id)
-        payload = proposition_payload(prop)
-        if raised:
-            payload["re_raised_conflict_ids"] = [c.id for c in raised]
         return json.dumps(payload)
 
     @tool
@@ -373,15 +370,12 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         if payload.get("refused") or payload.get("ok") is False:
             return json.dumps(payload)
         answer = interrupt(payload)
-        result = _conduct(
-            lambda a: resume_accept(backend, a),
-            _envelope(answer, _classify_confirmation(answer, "accept")),
+        return json.dumps(
+            _conduct(
+                lambda a: resume_accept(backend, a, touch=True),
+                _envelope(answer, _classify_confirmation(answer, "accept")),
+            )
         )
-        if result.get("ok"):
-            raised = inference.touch_propositions(proposition_id)
-            if raised:
-                result["re_raised_conflict_ids"] = [c.id for c in raised]
-        return json.dumps(result)
 
     @tool
     def reject_proposition(proposition_id: str, reason: str) -> str:
@@ -390,15 +384,12 @@ def build_session_tools(backend: BackendProtocol) -> Sequence[BaseTool]:
         if payload.get("refused") or payload.get("ok") is False:
             return json.dumps(payload)
         answer = interrupt(payload)
-        result = _conduct(
-            lambda a: resume_reject(backend, a),
-            _envelope(answer, _classify_confirmation(answer, "reject")),
+        return json.dumps(
+            _conduct(
+                lambda a: resume_reject(backend, a, touch=True),
+                _envelope(answer, _classify_confirmation(answer, "reject")),
+            )
         )
-        if result.get("ok"):
-            raised = inference.touch_propositions(proposition_id)
-            if raised:
-                result["re_raised_conflict_ids"] = [c.id for c in raised]
-        return json.dumps(result)
 
     @tool
     def run_iteration(conflict_id: str) -> str:

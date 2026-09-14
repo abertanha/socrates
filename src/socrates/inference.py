@@ -31,6 +31,7 @@ from socrates.asking import (
     require_pending,
     token_refusal,
 )
+from socrates.refusal import Refusal
 from socrates.coverage import CoverageStore
 from socrates.need import read_amendments, read_need
 from socrates.notifications import NotificationService, is_unavoidable
@@ -270,11 +271,17 @@ class InferenceEngine:
         """
         pass_no = self.current_pass()
         if pass_no < 2:
-            raise ValueError("Reconciliation applies from pass 2 onward")
+            raise Refusal(
+                "Reconciliation applies from pass 2 onward",
+                ["scenarios", "assertion_tests", "door"],
+            )
 
         state = self._load_inference_state()
         if state.get("reconciliation_pass") == pass_no:
-            raise ValueError(f"Reconciliation already completed for pass {pass_no}")
+            raise Refusal(
+                f"Reconciliation already completed for pass {pass_no}",
+                ["scenarios", "assertion_tests", "probe", "door"],
+            )
 
         if not findings:
             state["reconciliation_pass"] = pass_no
@@ -362,9 +369,10 @@ class InferenceEngine:
         self._require_need()
         self._require_reconciliation_before_scenarios()
         if proposition_id in self._blocked_proposition_ids():
-            raise ValueError(
+            raise Refusal(
                 "Scenario generation skipped: Proposition "
-                f"{proposition_id} was contradicted by Reconciliation"
+                f"{proposition_id} was contradicted by Reconciliation",
+                ["probe", "defer"],
             )
         if len(scenarios) < MIN_SCENARIOS_PER_PROPOSITION:
             raise ValueError(
@@ -411,9 +419,10 @@ class InferenceEngine:
         self._require_proposition(proposition_id)
         self._require_reconciliation_before_scenarios()
         if proposition_id in self._blocked_proposition_ids():
-            raise ValueError(
+            raise Refusal(
                 "Assertion Tests skipped: Proposition "
-                f"{proposition_id} was contradicted by Reconciliation"
+                f"{proposition_id} was contradicted by Reconciliation",
+                ["probe", "defer"],
             )
 
         prop = self._propositions.get(proposition_id)
@@ -512,9 +521,14 @@ class InferenceEngine:
             if c.status == "open" and c.batch_id is None and c.level != "L4"
         ]
         if not open_conflicts:
-            raise ValueError(
+            l4_open = any(
+                c.status == "open" and c.batch_id is None and c.level == "L4"
+                for c in conflicts
+            )
+            raise Refusal(
                 "No Probe-resolvable Conflicts (L1–L3); "
-                "L4 Conflicts require Iteration via run_iteration"
+                "L4 Conflicts require Iteration via run_iteration",
+                ["iteration"] if l4_open else ["door"],
             )
 
         batches = self._load_batches()
@@ -679,10 +693,11 @@ class InferenceEngine:
             raise ValueError(f"Conflict {conflict_id} is not open")
         criticality = self._criticality_for(conflict)
         if criticality.get("unavoidable"):
-            raise ValueError(
+            raise Refusal(
                 f"Conflict {conflict_id} is unavoidable (non-deferrable, blocks "
                 "progress); resolve via Iteration or Probe — Notification already "
-                "surfaced it outside Interview flow"
+                "surfaced it outside Interview flow",
+                ["iteration"],
             )
         conflict.status = "deferred"
         conflict.re_raised = False
@@ -1005,9 +1020,10 @@ class InferenceEngine:
             return
         state = self._load_inference_state()
         if state.get("reconciliation_pass") != pass_no:
-            raise ValueError(
+            raise Refusal(
                 "Reconciliation must run before Scenario generation / "
-                f"Assertion Tests from pass 2 (current pass {pass_no})"
+                f"Assertion Tests from pass 2 (current pass {pass_no})",
+                ["reconcile"],
             )
 
     def _blocked_proposition_ids(self) -> set[str]:
@@ -1090,7 +1106,10 @@ class InferenceEngine:
         # (ticket 22: the filter is amendable; the record is audit).
         need = read_need(self._backend)
         if not need:
-            raise ValueError("Need must be persisted before generating Scenarios")
+            raise Refusal(
+                "Need must be persisted before generating Scenarios",
+                ["opening"],
+            )
         return need
 
     def _load_scenarios(self) -> list[Scenario]:
