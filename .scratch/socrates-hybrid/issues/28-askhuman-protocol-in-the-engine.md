@@ -35,3 +35,18 @@ Implemented in 683b0b9 (TDD: 23 protocol tests written failing first, then the b
 - **One-pending is engine law, including probe-vs-iteration.** While a probe question is pending, `run_iteration` (and every other asking verb) refuses naming the probe; the conductor finishes or defers the open Batch first. This generalizes conduction's "no new pass while a Batch awaits" to every question.
 - **Accept/reject pre-validate before asking** (an unknown proposition id is refused before the user is interrupted) — a tightening with no legacy test depending on the old ask-then-fail order. Per-surface touch semantics preserved exactly: session accepts/rejects re-raise deferred conflicts, chapter-specialist ones do not (as before).
 - **`inference.py` commit note.** The standing "user's uncommitted edit — never commit" rule was honored by flagging before commit: at session start the file was clean in the working tree (the edit had been resolved beforehand), the whole diff was this refactor, and the user approved the commit explicitly.
+
+## Review (fixed point d8d8b48) — fixes in ca12ab2
+
+Ten findings (8 correctness, 2 cleanup), all addressed; gate **146 passed** (5 new review tests).
+
+1. **AskRefusal escaped the ask paths' `ValueError` guards** (the review's sharpest catch): a one-pending refusal surfaced as a raw traceback, not the structured JSON — the exact crash class this ticket kills. `_ask` now wraps every ask site (session, activity, pulse, iteration, probe); refused and error payloads return without interrupting.
+2. **The Iteration menu offered an answer the validator refuses** (`activity` token; three conflicting grammars). The menu is now built from what `_parse_iteration_confirm` admits: `confirm`, or an activity NAME — one grammar.
+3. **Same-kind idempotence dropped the new ask's arguments** (accept p2 while p1 pending re-presented p1). Asks carry a subject fingerprint (proposition id / activity / the proposed shape); the same subject re-presents, a different one refuses naming the pending.
+4. **A corrupt pending marker crashed every later ask** (unguarded `json.loads`). It self-heals to no question — a corrupt record cannot be honored (ADR-0001 spirit); noted as a ruling.
+5. **Lifecycle apply cleared the marker before the fallible work** — a failed accept/reject consumed the user's answer. Clear moved after success; a failed apply leaves the question pending, answer unconsumed (the Probe rollback's principle generalized).
+6. **Same for the door's close path** (precedence failure consumed the `close` answer). Fixed identically.
+7. **Satisfaction vocabulary drift**: `"im satisfied"` routed at the door but looped at Satisfaction (deliverable's `_AFFIRMATIVE` lacked the no-apostrophe variant). Added there — one phrase, one routing.
+8. **Duplicate probe resolutions applied twice** (and echoed duplicated in `conflict_ids`). A duplicate entry now refuses (`Duplicate resolution for 'c1'`) and rolls back transactionally.
+9. *(cleanup, partial by design)* The four accept/reject scaffolds remain two pairs — the session/activity split is a real semantic difference (touch/re-raise postlude), not drift; the hand-built `{canonical, raw}` literals are gone behind one `_envelope` writer.
+10. *(cleanup)* Token tuples derive from the accepted-answers menus (`_tokens`), so the advertised menu and the validator's vocabulary share one home.
