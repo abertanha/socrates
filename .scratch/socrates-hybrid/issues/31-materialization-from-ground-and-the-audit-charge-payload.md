@@ -83,3 +83,91 @@ suite re-seated on the payload, zero charter phrases lost).
   verbatim, the file has no charge-shaped text left to improvise
   from.
 
+
+## Review (fixed point `9b4301e..a1d6ffe` — ticket 31, user-invoked)
+
+Ten findings; nine confirmed by execution against the working tree and
+fixed, one (F2) partially stale with its residual fixed. Root fusion:
+ticket 30's skin retired the ordering prose on the premise that "the
+engine refuses what is not admissible" — but the engine only refused on
+the session surface (ConductionMiddleware wraps the deepagents tool
+surface alone); the invocation seam the skill actually drives had no
+gates, so the premise was false exactly where the skill lives. The fix
+moves the ordering into the shared engine layer, beneath both surfaces.
+Gate after the cycle: **215 passed** (210 + 5 new pins: four ordering
+pins on the invocation files, one admissible-next pin on the AskRefusal
+families; collateral: the materialize seed lapidates between proposes,
+and the three lifecycle stubs now walk the chapters to the tail — where
+the treadmill is legitimately off — mirroring test_centrality).
+
+1. **F1 (confirmed, fixed)** — propose passed at the invocation seam
+   with no Need, with the Opening question pending, and on the
+   treadmill (unlapidated ground); the pass verbs ran under a presented
+   Batch. Fixed engine-side, once for every surface:
+   `verbs._gate_propose` (Need → `resume`/`opening`; treadmill →
+   `scenarios`+`assertion_tests`, scoped `label != TAIL` because
+   chapters are implicit on this surface — `pipeline.begin` only fires
+   at door-close, so the middleware's `active` marker never exists
+   here) and `inference._require_no_pending_batch` at the top of
+   reconcile / record_scenarios / run_assertion_tests.
+2. **F2 (partially stale; residual fixed)** — "no invocation verb
+   implements re-derivation" was already false at `a1d6ffe`
+   (`materialize` is the cure path). The residual was real: the skill's
+   parentheticals promised glossary "one unambiguous term per concept"
+   and structure "entities, characteristics, relationships,
+   cardinality" while the composer ships flat verbatim statements —
+   spec-settled, so the parentheticals now say what each part holds
+   (the chapter's accepted ground, rows verbatim, cited) instead of
+   promising a shape the derivation does not perform.
+3. **F3 (confirmed, fixed)** — the skill said the deliverable lands at
+   `.socrates/deliverable/`; it lands at `.socrates/model/deliverable/`
+   (paths are `/model/deliverable/*` under the session root).
+4. **F4 (confirmed, fixed)** — language circularity: the greeting was to
+   be rendered "in the session's language", but the language was
+   defined as "the language the user speaks in their first answer" —
+   nonexistent at greeting time. Now: declared at the Opening as "the
+   language the user is already speaking with you when they arrive";
+   the opening bullet renders in that language.
+5. **F5 (confirmed, fixed)** — neither AskRefusal family
+   (`token_refusal`, `_one_pending_payload`) carried `admissible_next`,
+   breaking the skin's promise that every refusal names the admissible
+   next verbs. Both now say `["resume"]`; the absent-question refusal
+   says `["pending_question"]`. Pinned.
+6. **F6 (confirmed, fixed)** — the skill hardcoded enumerations that
+   duplicate payload data: the door menu ("close, not yet, or
+   Satisfaction") and the Satisfaction warning's contents (deferred
+   Conflicts + unvisited chapters — stale since ticket 23 added
+   amendments). Both now defer to the payload ("its payload
+   advertising the answers it accepts"; "everything it names, nothing
+   it does not").
+7. **F7 (confirmed, fixed)** — the bootstrap gate passed once but each
+   invocation file is a fresh process importing `socrates` at module
+   top, and the skill never located the repo root relative to itself.
+   The gate now states where the file lives
+   (`<repository>/.claude/skills/socrates/SKILL.md`, root three up),
+   says to install "the repository this skill ships in", and teaches
+   that the import must hold at every invocation (installed package,
+   or the import path set in every execution).
+8. **F8 (confirmed, fixed)** — v2's Opening distillation duty ("until
+   it is a Need, not a feature list") was deleted in the v3 rewrite
+   while `resume_opening` accepts any non-empty text. Restated on the
+   `opening` verb: distill in conversation before the resume — the
+   engine persists what is resumed, so the distillation cannot happen
+   after.
+9. **F9 (confirmed, fixed)** — `--root` (the invocation surface's one
+   flag, default the working directory) was never named in the skill.
+   The verbs paragraph now names it and pins the convention: every
+   invocation of the session passes that same root.
+10. **F10 (confirmed, fixed)** — the probe resume carries
+    `notifications` (supersede cascade, degraded ground) but no prose
+    instructed relaying them. The `probe` bullet now teaches the relay
+    in the domain's own terms.
+
+**Known residual, unflagged by the review, recorded**: the D6 propose
+TAG gate (a Proposition born tagged to a chapter other than the walk's
+current one) is enforced by the middleware on the session surface only;
+`_gate_propose` does not reproduce it. Deliberate for this cycle — the
+invocation surface's chapter marker does not exist mid-walk (same
+`active` absence as the treadmill scoping), and the spec's valve
+question (which chapter a Probe-born Proposition belongs to) is still
+open. To be settled with the ticket-25 real session's evidence.

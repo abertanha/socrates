@@ -371,3 +371,117 @@ def test_tracer_need_to_door_through_the_files_alone(tmp_path):
     # The pass is done: nothing pending, pipeline moved, all state on disk.
     assert call(pending_question)["pending"] is None
     assert call(pipeline_status)["pipeline"]["completed"] == ["requirements"]
+
+
+# --- The ordering the skin promises, enforced at this seam (review 3) ------------
+#
+# The v3 skin retired its ordering prose on the premise that the engine
+# refuses what is not admissible — but the Need, treadmill, and owed-Batch
+# gates lived only in the session middleware. These pins hold the premise
+# at the seam the skin actually teaches.
+
+
+def test_propose_refuses_before_the_need_exists(tmp_path):
+    from socrates.invocations import propose
+
+    refused = _call(propose, tmp_path, {
+        "statement": "A Payment settles an Order.",
+        "activity": "requirements",
+    })
+    assert refused["ok"] is False
+    assert refused["refused"] is True
+    assert refused["admissible_next"] == ["opening"], refused
+
+
+def test_propose_refuses_while_the_opening_question_is_pending(tmp_path):
+    from socrates.invocations import opening, propose
+
+    _call(opening, tmp_path)
+    refused = _call(propose, tmp_path, {
+        "statement": "A Payment settles an Order.",
+        "activity": "requirements",
+    })
+    assert refused["ok"] is False
+    assert refused["refused"] is True
+    assert refused["admissible_next"] == ["resume"], refused
+
+
+def test_propose_refuses_on_the_treadmill(tmp_path):
+    from socrates.invocations import accept, opening, propose, resume
+
+    _call(opening, tmp_path)
+    _call(resume, tmp_path, {"canonical": "Checkout.", "raw": "x"})
+    _call(propose, tmp_path, {
+        "statement": "A Payment settles an Order.",
+        "activity": "requirements",
+    })
+    _call(accept, tmp_path, {"proposition_id": "p1"})
+    _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
+
+    # p1 is accepted but has never been through a pass — the treadmill
+    # holds the next propose until it is lapidated.
+    refused = _call(propose, tmp_path, {
+        "statement": "An Order holds Items.",
+        "activity": "requirements",
+    })
+    assert refused["ok"] is False
+    assert refused["refused"] is True
+    assert "p1" in refused["reason"], refused
+    assert refused["admissible_next"] == ["scenarios", "assertion_tests"], refused
+
+
+def test_passes_refuse_while_a_batch_awaits_the_user(tmp_path):
+    from socrates.invocations import (
+        assertion_tests,
+        opening,
+        probe,
+        propose,
+        accept,
+        reconcile,
+        resume,
+        scenarios,
+    )
+
+    _call(opening, tmp_path)
+    _call(resume, tmp_path, {"canonical": "Checkout.", "raw": "x"})
+    _call(propose, tmp_path, {
+        "statement": "An Order holds exactly one Payment.",
+        "activity": "requirements",
+    })
+    _call(accept, tmp_path, {"proposition_id": "p1"})
+    _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
+    _call(scenarios, tmp_path, {
+        "proposition_id": "p1",
+        "scenarios": [
+            {"description": "one", "edge": "one", "need_relevant": True},
+            {"description": "many", "edge": "many", "need_relevant": True},
+        ],
+    })
+    _call(assertion_tests, tmp_path, {
+        "proposition_id": "p1",
+        "outcomes": [
+            {"scenario_id": "s1", "survives": True},
+            {"scenario_id": "s2", "survives": False,
+             "kind": "contrariety", "summary": "Many breaks one."},
+        ],
+    })
+    asked = _call(probe, tmp_path)
+    assert asked["kind"] == "probe"
+
+    # The Batch is presented, its question pending: every pass verb
+    # refuses, naming the one admissible move — answer the question.
+    for verb, payload in (
+        (scenarios, {"proposition_id": "p1", "scenarios": [
+            {"description": "one", "edge": "one", "need_relevant": True},
+            {"description": "many", "edge": "many", "need_relevant": True},
+        ]}),
+        (assertion_tests, {"proposition_id": "p1", "outcomes": [
+            {"scenario_id": "s1", "survives": True},
+        ]}),
+        (reconcile, {"findings": []}),
+    ):
+        refused = _call(verb, tmp_path, payload)
+        assert refused["ok"] is False, verb.__name__
+        assert refused["refused"] is True, verb.__name__
+        assert "Batch" in refused["reason"], (verb.__name__, refused)
+        assert refused["admissible_next"] == ["resume"], (verb.__name__, refused)

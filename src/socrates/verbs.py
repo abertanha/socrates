@@ -45,6 +45,7 @@ from socrates.asking import (
     validate_token,
 )
 from socrates.deliverable import DeliverableComposer
+from socrates.conduction import TAIL, read_conduction_state
 from socrates.inference import InferenceEngine
 from socrates.need import read_need, write_amendment
 from socrates.opening import OPENING_GREETING, OPENING_QUESTION, render_opening
@@ -77,6 +78,7 @@ def propose(
     """Propose a Proposition — the orchestrator-style surface re-raises
     the deferred Conflicts its new ground touches (``touch=True``); the
     chapter surface does not (ticket 17's one-regime ruling)."""
+    _gate_propose(backend)
     prop = PropositionStore(backend).propose(statement, activity=activity)
     payload = proposition_payload(prop)
     if touch:
@@ -84,6 +86,36 @@ def propose(
         if raised:
             payload["re_raised_conflict_ids"] = [c.id for c in raised]
     return payload
+
+
+def _gate_propose(backend: BackendProtocol) -> None:
+    """The propose ordering, engine-side (review 3): the skin retired its
+    ordering prose on the premise that the engine refuses what is not
+    admissible — so it does, here, on every surface. No modeling exists
+    before the Need (the session middleware holds the same gate for the
+    tool surface); the treadmill holds the next propose until the open
+    chapter's unlapidated ground is lapidated. On this surface chapters
+    are implicit until their door — the walk's chapter is whichever the
+    precedence expects — so the treadmill reads the same facts the
+    middleware's chapter-scoped rule reads, minus the active marker this
+    surface does not carry."""
+    if read_need(backend) is None:
+        pending = read_pending(backend)
+        raise Refusal(
+            "the Need is not registered yet — the Opening elicits and "
+            "persists it before any modeling exists",
+            ["resume"] if pending is not None else ["opening"],
+        )
+    state = read_conduction_state(backend)
+    if state.label != TAIL and state.unlapidated:
+        owed = ", ".join(pid for pid, _ in state.unlapidated)
+        raise Refusal(
+            f"treadmill: Proposition(s) {owed} have never been through "
+            "a pass — lapidate them (Scenarios, then Assertion Tests) "
+            "before proposing the next one; only ground born from Probe "
+            "resolution enters without waiting",
+            ["scenarios", "assertion_tests"],
+        )
 
 
 def _declined(action: str, proposition_id: str, status: str) -> dict[str, Any]:

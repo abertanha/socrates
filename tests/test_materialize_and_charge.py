@@ -53,7 +53,7 @@ def _call(module, tmp_path: Path, data=None):
 
 def _seed_accepted_ground(tmp_path: Path) -> None:
     """A minimal accepted ground through the files alone."""
-    from socrates.invocations import accept, opening, propose, resume
+    from socrates.invocations import accept, opening, propose, resume, scenarios
 
     _call(opening, tmp_path)
     _call(resume, tmp_path, {"canonical": NEED, "raw": "checkout"})
@@ -61,6 +61,17 @@ def _seed_accepted_ground(tmp_path: Path) -> None:
         _call(propose, tmp_path, {"statement": statement, "activity": activity})
         _call(accept, tmp_path, {"proposition_id": f"p{index}"})
         _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
+        # Review 3: the treadmill is engine law now — lapidate this
+        # Proposition before the next propose.
+        _call(scenarios, tmp_path, {
+            "proposition_id": f"p{index}",
+            "scenarios": [
+                {"description": "edge one", "edge": "one",
+                 "need_relevant": True},
+                {"description": "edge many", "edge": "many",
+                 "need_relevant": True},
+            ],
+        })
 
 
 def _deliverable_text(tmp_path: Path) -> str:

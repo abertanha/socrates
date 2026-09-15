@@ -190,6 +190,7 @@ def require_pending(backend: BackendProtocol, kind: str) -> dict[str, Any]:
                 "refused": True,
                 "reason": f"No pending question to resume (expected {kind!r})",
                 "expected_kind": kind,
+                "admissible_next": ["pending_question"],
             }
         )
     if existing["kind"] != kind:
@@ -261,6 +262,7 @@ def token_refusal(pending: dict[str, Any], detail: str) -> AskRefusal:
                 entry["token"] for entry in pending.get("accepted_answers", [])
             ],
             "ask_again": True,
+            "admissible_next": ["resume"],
         }
     )
 
@@ -280,4 +282,5 @@ def _one_pending_payload(
             "question": pending.get("question", ""),
         },
         "attempted_kind": attempted_kind,
+        "admissible_next": ["resume"],
     }

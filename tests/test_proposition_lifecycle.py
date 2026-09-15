@@ -49,6 +49,35 @@ def _by_id(files: dict) -> dict:
     return {p["id"]: p for p in props}
 
 
+def _chapter_close_stub(label: str) -> StubChatModel:
+    """A specialist that declares its chapter complete — no ground born."""
+    return StubChatModel(
+        responses=[
+            _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
+            AIMessage(content=f"{label} activity complete."),
+        ],
+        label=label,
+    )
+
+
+def _close_stubs() -> dict:
+    return {
+        "requirements": _chapter_close_stub("req"),
+        "domain_modeling": _chapter_close_stub("dom"),
+        "behavioral_specification": _chapter_close_stub("beh"),
+    }
+
+
+def _walk_doors(agent, config, r) -> dict:
+    """Answer "close" at each of the three chapter doors (ticket 17)."""
+    for activity in ("requirements", "domain_modeling", "behavioral_specification"):
+        door = r["__interrupt__"][0].value
+        assert door["kind"] == "door"
+        assert door["activity"] == activity
+        r = agent.invoke(Command(resume="close"), config=config)
+    return r
+
+
 def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
     need = "Marketplace checkout payments domain."
     accepted_statement = "A Payment belongs to exactly one Order."
@@ -59,6 +88,28 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "c-open"),
+            # Review 3: the treadmill is engine law mid-walk now — these
+            # lifecycle pins run in the tail (passes over the whole
+            # Model), where the treadmill is legitimately off, so the
+            # accept/reject/flag semantics stay the point of the test.
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Run Requirements."},
+                "c-task-req",
+            ),
+            _tool_call(
+                "task",
+                {"subagent_type": "domain-modeling", "description": "Run Structure."},
+                "c-task-dom",
+            ),
+            _tool_call(
+                "task",
+                {
+                    "subagent_type": "behavioral-specification",
+                    "description": "Run Rules.",
+                },
+                "c-task-beh",
+            ),
             _tool_call(
                 "propose_proposition",
                 {"statement": accepted_statement, "activity": "requirements"},
@@ -87,7 +138,11 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
             AIMessage(content="Lifecycle pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model, reinjection_limit=0)  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
+    agent = create_socrates_session(
+        model=model,
+        activity_models=_close_stubs(),
+        reinjection_limit=0,  # only-sink guard off: scripted-silent ending (guard: test_only_sink.py)
+    )
     config = _thread_config()
 
     opening = agent.invoke(
@@ -96,7 +151,9 @@ def test_proposition_lifecycle_candidate_accept_reject_guardrail_flag():
     )
     assert opening["__interrupt__"][0].value["kind"] == "opening"
 
-    at_accept = agent.invoke(Command(resume=need), config=config)
+    r = agent.invoke(Command(resume=need), config=config)
+    assert r["files"][NEED_PATH]["content"] == need
+    at_accept = _walk_doors(agent, config, r)
     assert at_accept["files"][NEED_PATH]["content"] == need
     assert at_accept["__interrupt__"][0].value["kind"] == "accept"
     assert at_accept["__interrupt__"][0].value["proposition_id"] == "p1"
@@ -144,6 +201,26 @@ def test_accept_and_reject_interrupts_honor_a_declined_answer():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "c-open"),
+            # Review 3: the treadmill is engine law mid-walk now — these
+            # lifecycle pins run in the tail, where it is legitimately off.
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Run Requirements."},
+                "c-task-req",
+            ),
+            _tool_call(
+                "task",
+                {"subagent_type": "domain-modeling", "description": "Run Structure."},
+                "c-task-dom",
+            ),
+            _tool_call(
+                "task",
+                {
+                    "subagent_type": "behavioral-specification",
+                    "description": "Run Rules.",
+                },
+                "c-task-beh",
+            ),
             _tool_call(
                 "propose_proposition",
                 {"statement": p1, "activity": "requirements"},
@@ -166,7 +243,11 @@ def test_accept_and_reject_interrupts_honor_a_declined_answer():
             AIMessage(content="Lifecycle pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model, reinjection_limit=0)
+    agent = create_socrates_session(
+        model=model,
+        activity_models=_close_stubs(),
+        reinjection_limit=0,
+    )
     config = _thread_config()
 
     agent.invoke(
@@ -174,6 +255,7 @@ def test_accept_and_reject_interrupts_honor_a_declined_answer():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _walk_doors(agent, config, r)
     assert r["__interrupt__"][0].value["kind"] == "accept"
     assert r["__interrupt__"][0].value["proposition_id"] == "p1"
 
@@ -217,6 +299,26 @@ def test_cross_polarity_answer_never_confirms_the_opposite_action():
     model = StubChatModel(
         responses=[
             _tool_call("run_opening", {}, "c-open"),
+            # Review 3: the treadmill is engine law mid-walk now — these
+            # lifecycle pins run in the tail, where it is legitimately off.
+            _tool_call(
+                "task",
+                {"subagent_type": "requirements", "description": "Run Requirements."},
+                "c-task-req",
+            ),
+            _tool_call(
+                "task",
+                {"subagent_type": "domain-modeling", "description": "Run Structure."},
+                "c-task-dom",
+            ),
+            _tool_call(
+                "task",
+                {
+                    "subagent_type": "behavioral-specification",
+                    "description": "Run Rules.",
+                },
+                "c-task-beh",
+            ),
             _tool_call(
                 "propose_proposition",
                 {"statement": p1, "activity": "requirements"},
@@ -238,7 +340,11 @@ def test_cross_polarity_answer_never_confirms_the_opposite_action():
             AIMessage(content="Cross-polarity pass complete."),
         ]
     )
-    agent = create_socrates_session(model=model, reinjection_limit=0)
+    agent = create_socrates_session(
+        model=model,
+        activity_models=_close_stubs(),
+        reinjection_limit=0,
+    )
     config = _thread_config()
 
     agent.invoke(
@@ -246,6 +352,7 @@ def test_cross_polarity_answer_never_confirms_the_opposite_action():
         config=config,
     )
     r = agent.invoke(Command(resume=need), config=config)
+    r = _walk_doors(agent, config, r)
     assert r["__interrupt__"][0].value["kind"] == "accept"
 
     # "reject" means "no, don't accept" — it must NOT confirm Acceptance.

@@ -44,6 +44,7 @@ from socrates.verbs import (
     resume_amend_need,
     resume_door,
     resume_opening,
+    resume_pending,
     resume_satisfaction,
 )
 
@@ -251,6 +252,31 @@ def test_second_asking_verb_refuses_naming_the_pending_question(tmp_path):
 
     # The refusal leaves the pending question untouched.
     assert read_pending(backend) == door
+
+
+def test_every_refusal_names_the_admissible_next_verbs(tmp_path):
+    """Review 3 — the skin teaches that every refusal names the admissible
+    next verbs; both AskRefusal families must keep that promise (the
+    wrong-order Refusals always did). When a question stands, the one
+    admissible move is to answer it."""
+    backend = _backend(tmp_path)
+    backend.write(NEED_PATH, "Marketplace checkout payments domain.")
+    _propose(
+        backend, "Payment status is always Authorized or Settled.", "domain_modeling"
+    )
+    ask_door(backend, "requirements")
+
+    with pytest.raises(AskRefusal) as exc:
+        ask_accept(backend, "p1")
+    assert exc.value.payload["admissible_next"] == ["resume"], (
+        "a one-pending refusal does not name the way out"
+    )
+
+    with pytest.raises(AskRefusal) as exc:
+        resume_pending(backend, {"canonical": "bogus", "raw": "x"})
+    assert exc.value.payload["admissible_next"] == ["resume"], (
+        "a token refusal does not name the way out"
+    )
 
 
 def test_re_asking_the_same_kind_re_presents_unchanged(tmp_path):

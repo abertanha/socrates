@@ -269,6 +269,7 @@ class InferenceEngine:
         Reconciliation ran and surfaced nothing, which satisfies the
         pre-Scenario gate for the pass — findings are never fabricated.
         """
+        self._require_no_pending_batch()
         pass_no = self.current_pass()
         if pass_no < 2:
             raise Refusal(
@@ -365,6 +366,7 @@ class InferenceEngine:
         proposition_id: str,
         scenarios: list[dict[str, Any]],
     ) -> list[Scenario]:
+        self._require_no_pending_batch()
         self._require_proposition(proposition_id)
         self._require_need()
         self._require_reconciliation_before_scenarios()
@@ -416,6 +418,7 @@ class InferenceEngine:
         proposition_id: str,
         outcomes: list[dict[str, Any]],
     ) -> list[Conflict]:
+        self._require_no_pending_batch()
         self._require_proposition(proposition_id)
         self._require_reconciliation_before_scenarios()
         if proposition_id in self._blocked_proposition_ids():
@@ -1116,6 +1119,19 @@ class InferenceEngine:
                 ["opening"],
             )
         return need
+
+    def _require_no_pending_batch(self) -> None:
+        # The Batch glossary rule, made mechanical for every surface
+        # (review 3): "the user clarifies every Conflict in it before the
+        # next pass runs". A presented Batch carries its pending
+        # question, so the one admissible move is to answer it.
+        if any(b.status == "open" for b in self._load_batches()):
+            raise Refusal(
+                "a Probe Batch still awaits the user — no new pass runs "
+                "until every Conflict in the pending Batch is resolved "
+                "or deferred",
+                ["resume"],
+            )
 
     def _load_scenarios(self) -> list[Scenario]:
         raw = self._read_json(SCENARIOS_PATH)

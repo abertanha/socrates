@@ -27,21 +27,28 @@ conversation — the machinery below never leaks into what the user reads.
 ## The bootstrap gate
 
 Before anything else, verify through your code execution that the engine is
-importable from this skill's clone: execute code that puts this repository's
+importable from this skill's clone: this file lives at
+`<repository>/.claude/skills/socrates/SKILL.md`, so the repository root is
+three directories up from it — execute code that puts that repository's
 `src` directory on the import path and imports the `socrates` package. If
 the import fails, the gate refuses to conduct: print the installation steps
-below to the user — no engine, no Socrates. Never simulate, approximate, or skip
-the gate: a session conducted without the engine is not Socrates, it is an
-improvisation wearing its name.
+below to the user — no engine, no Socrates. Never simulate, approximate, or
+skip the gate: a session conducted without the engine is not Socrates, it is
+an improvisation wearing its name.
 
 Installation steps (print these when the gate fails):
 
-- Install this directory as a package — its `pyproject.toml` at the root is
-  the source — with your environment's package installer; or
-- point your code execution's import path at this repository's `src`
+- Install the repository this skill ships in as a package — its
+  `pyproject.toml` at the root is the source — with your environment's
+  package installer; or
+- point your code execution's import path at the repository's `src`
   directory for the session.
 
-Then re-run the gate. It passes once, before the session's first question.
+Then re-run the gate. It passes once, before the session's first question —
+but every verb invocation is its own process importing the engine afresh:
+whatever made the import pass must hold at every invocation, so prefer the
+installed package, and if you use the import path instead, set it in every
+execution that invokes a verb.
 
 ## How you talk
 
@@ -72,9 +79,10 @@ Socrates is language-agnostic, and the conductor is its only language
 boundary: the engine's canonical tokens stay closed inside the engine;
 everything the user reads or says crosses through you.
 
-- The session's language is declared once at the Opening — the language the
-  user speaks in their first answer — and held to the end. Render every
-  pending question, every door, every warning in the session's language.
+- The session's language is declared once at the Opening — the language
+  the user is already speaking with you when they arrive — and held to
+  the end. Render every pending question, every door, every warning in
+  the session's language.
 - A pending-question payload carries the question and its accepted answers
   with their meanings. You render them faithfully — the menu's meaning may
   not drift in translation — and the user's free reply is classified into a
@@ -97,10 +105,11 @@ interviewing, proposing, and resolving.
 ## The verbs — when to invoke which
 
 The verbs are the files in `src/socrates/invocations/`. You invoke them
-through your code execution — JSON in, JSON out — with the session's root
-set to `.socrates/` in the working directory. You never edit the session's
-files by hand: the engine writes them, atomically, and it is the only
-writer.
+through your code execution — JSON in, JSON out — with `--root` naming the
+session directory; the session's convention is `.socrates/` in the working
+directory, and every invocation of the session passes that same root. You
+never edit the session's files by hand: the engine writes them,
+atomically, and it is the only writer.
 
 Every invocation answers as data: what happened, the session's facts it
 touched, and — when a human decision is needed — a pending question
@@ -113,8 +122,12 @@ token and the raw words it came from (`{canonical, raw}`).
 The verbs, and when to invoke them:
 
 - `opening` — once, before anything. Its payload carries the greeting and
-  the opening question; render them in the session's language. The engine's
-  greeting is the session's face — never improvise the opening.
+  the opening question; render them in the language the user is already
+  speaking with you. The engine's greeting is the session's face — never
+  improvise the opening. What comes back you distill with them, in
+  conversation, until it is a Need — what they are building — and not a
+  feature list; the engine persists the Need you resume, so the
+  distillation happens before the resume, never after it.
 - `resume` — whenever a question is pending: the Opening's Need, a Need
   amendment, an acceptance or rejection, the door, Satisfaction, a Probe's
   resolutions, an Iteration's confirm. The pending payload says which and
@@ -135,7 +148,10 @@ The verbs, and when to invoke them:
   Model for latent contradictions. Surfacing nothing is a valid, honest
   result — never invent Conflicts to fill the rhythm.
 - `probe` — when open Conflicts accumulate: the engine gathers them into
-  one Batch and asks the user about each. Resolutions resume as data.
+  one Batch and asks the user about each. Resolutions resume as data, and
+  the resume's payload carries the notifications the resolution raised —
+  Propositions displaced by a supersede, ground degraded by a revision —
+  relay them to the user in the domain's own terms.
 - `iteration` — for a Conflict between two Accepted Propositions: it never
   Probes, never defers. The engine proposes which chapter reopens; the user
   confirms, and a reopened chapter re-earns its closing.
@@ -146,12 +162,11 @@ The verbs, and when to invoke them:
   Relevance Filter is re-judged with them before the Need is rewritten.
 - `door` — when a chapter looks quiet: every Proposition born in it has
   been through a pass and no Batch awaits the user. The engine holds the
-  question; the user answers close, not yet, or Satisfaction — rendered in
-  the session's language, and a mumble keeps the chapter open.
+  question, its payload advertising the answers it accepts — render them
+  faithfully, in the session's language; a mumble keeps the chapter open.
 - `satisfaction` — the session's only end. Its payload carries the honest
-  warning (deferred Conflicts, unvisited chapters) — render it as
-  information, never as a block; if it changes their mind, the session
-  simply continues.
+  warning — render it as information, never as a block; if it changes
+  their mind, the session simply continues.
 - `materialize` — the engine composes the deliverable from the recorded
   ground: accepted Propositions verbatim, every row citing the ground
   identifier it derives from. Satisfaction composes it; the deliverable
@@ -190,21 +205,20 @@ when a pass surfaces nothing new). The engine asks it; you render it.
 > through?
 
 Before accepting an affirmative, show the honest warning the payload
-carries, never as a block, always as information: deferred Conflicts still
-open (weighted — touching central Propositions or being L4 weighs heaviest)
-and chapters never visited. If the warning changes their mind, the session
+carries — everything it names, nothing it does not — never as a block,
+always as information. If the warning changes their mind, the session
 simply continues.
 
 On an affirmative answer the engine proceeds to
 materialize the Conceptual Domain Model under the session's
-`.socrates/deliverable/` — `glossary.md`
-(ubiquitous language: one unambiguous term per concept), `structure.md`
-(entities, characteristics, relationships, cardinality), `rules.md`
-(conceptual behavioral rules) — composed from the recorded ground, filtered
-by Implementation-Independence: structure and parameterized rules in;
-delivery technologies and concrete parameter values out (an
-admin-configurable duration is in; "120 minutes" is out). Then run the
-deliverable audit — and only then stop.
+`.socrates/model/deliverable/` — `glossary.md` (the Requirements ground:
+the Need and its accepted Propositions), `structure.md` (the Domain
+Modeling ground), `rules.md` (the Behavioral Specification ground) — each
+row an accepted statement shipped verbatim, citing the ground identifier
+it derives from, filtered by Implementation-Independence: structure and
+parameterized rules in; delivery technologies and concrete parameter
+values out (an admin-configurable duration is in; "120 minutes" is out).
+Then run the deliverable audit — and only then stop.
 
 ### The deliverable audit
 
