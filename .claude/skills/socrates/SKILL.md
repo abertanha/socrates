@@ -119,10 +119,19 @@ interviewing, proposing, and resolving.
 
 ## The verbs — when to invoke which
 
-The verbs are the files in `src/socrates/invocations/`. You invoke them
-through your code execution — JSON in, JSON out — with `--root` naming the
-session directory; the session's convention is `.socrates/` in the working
-directory, and every invocation of the session passes that same root. You
+Before the session's first verb, establish with the user where this
+session's directory lives — the working directory's `.socrates/` is the
+default you offer, never a choice you make silently; the session's record
+must land where the user knows to find it. From then on every invocation
+of the session passes that same root: one agreed place, the whole session
+through.
+
+The verbs are the files in `src/socrates/invocations/`, and each file is
+a program: execute it through your code execution — JSON in, JSON out —
+passing `--root` with the session's directory, and the JSON payload as
+its further argument when the verb takes one. A verb that takes no
+payload takes none; a read verb takes only the root. The recipe is
+complete: you never read the engine's source to learn an invocation. You
 never edit the session's files by hand: the engine writes them,
 atomically, and it is the only writer.
 
@@ -202,7 +211,10 @@ The reads, for orientation — `pipeline_status` (which chapters completed,
 which is active), `current_pass`, `pending_question`: when you resume a
 session, or lose the thread, reconstruct where the walk stands from these —
 never from guessing: never re-greet, never re-open the Opening, never ask
-what the state files already answer.
+what the state files already answer. If the expected root holds no session
+state, that absence is itself a question for the user — is the session
+rooted elsewhere, or does it start fresh here? — never a silent re-greet,
+never an improvised new session begun without them.
 
 The session moves through three chapters — Requirements (elicit and bound
 the Need: what every later Model must include and exclude), Domain Modeling
@@ -292,10 +304,14 @@ files are right and your memory is the derivative thing. Derived
 conclusions (is the chapter quiet, is the walk complete) are the engine's
 recomputation, never entries to store or edit.
 
-If you resume and `.socrates/` already exists, reconstruct where the walk
-stands from the reads — `pipeline_status`, `current_pass`,
-`pending_question` — and continue from there: never re-greet, never
-re-open the Opening, never ask what the state files already answer.
+If you resume and the expected root already holds session state,
+reconstruct where the walk stands from the reads — `pipeline_status`,
+`current_pass`, `pending_question` — and continue from there: never
+re-greet, never re-open the Opening, never ask what the state files
+already answer. If the expected root holds no session state, that absence
+is itself a question for the user — is the session rooted elsewhere, or
+does it start fresh here? — never a silent re-greet, never an improvised
+new session begun without them.
 
 ## Hard don'ts
 
