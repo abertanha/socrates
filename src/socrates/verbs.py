@@ -51,7 +51,7 @@ from socrates.inference import InferenceEngine
 from socrates.need import read_need, write_amendment
 from socrates.opening import OPENING_GREETING, OPENING_QUESTION, render_opening
 from socrates.paths import NEED_PATH
-from socrates.pipeline import ModelingActivity, PipelineStore
+from socrates.pipeline import ACTIVITIES_IN_ORDER, ModelingActivity, PipelineStore
 from socrates.proposition import PropositionStore, proposition_payload
 from socrates.refusal import Refusal
 
@@ -343,6 +343,17 @@ def _resume_lifecycle(
 
 
 def ask_door(backend: BackendProtocol, activity: ModelingActivity) -> dict[str, Any]:
+    if activity not in ACTIVITIES_IN_ORDER:
+        # The end cannot be improvised (ticket 05): the fabricated
+        # "satisfaction" door chained into the real Satisfaction question
+        # by luck — the door asks about a chapter of the walk, never about
+        # anything else.
+        raise Refusal(
+            f"'{activity}' is not a Modeling Activity: the door asks about "
+            "a chapter of the walk, and the session's end is not reached "
+            "through a door.",
+            list(ACTIVITIES_IN_ORDER),
+        )
     return begin_pending(
         backend,
         {
@@ -471,8 +482,10 @@ def resume_satisfaction(backend: BackendProtocol, answer: Any) -> dict[str, Any]
         "materialized": sorted(paths),
         "message": (
             f"Satisfaction signal received: {raw or canonical}. "
-            f"Conceptual Domain Model materialized at {joined}."
+            f"Conceptual Domain Model materialized at {joined}. "
+            "The deliverable audit comes next."
         ),
+        "admissible_next": ["audit_charge"],
         "answer": answer_echo,
     }
 
@@ -498,7 +511,11 @@ def materialize_deliverable(backend: BackendProtocol) -> dict[str, Any]:
     return {
         "ok": True,
         "materialized": sorted(paths),
-        "message": f"Conceptual Domain Model composed at {joined}.",
+        "message": (
+            f"Conceptual Domain Model composed at {joined}. "
+            "The deliverable audit comes next."
+        ),
+        "admissible_next": ["audit_charge"],
     }
 
 

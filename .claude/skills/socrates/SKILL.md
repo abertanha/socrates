@@ -286,11 +286,12 @@ charge and re-checks the touched entries only, once — the cure is held
 to the same test as the disease, without a loop. A clean audit changes
 nothing: end the session exactly as you otherwise would.
 
-If the runtime offers no sub-agent, run the same charge yourself as one
-dedicated pass reading only the Model record and the deliverable files —
-weaker, since your memory of the conversation is present, but still worth
-taking. Never write the audit's report into the session's files: it is a
-derived check, not ground.
+If the runtime offers no sub-agent, say so to the user before you run
+the same charge yourself as one dedicated pass reading only the Model
+record and the deliverable files — weaker, since your memory of the
+conversation is present, but still worth taking. The degradation is
+declared before it runs, never silent. Never write the audit's report
+into the session's files: it is a derived check, not ground.
 
 ## The Model's files (single source of truth)
 

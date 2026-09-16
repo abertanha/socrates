@@ -10,7 +10,7 @@ from socrates.verbs import ask_door
 
 def door(backend: Any, data: Any) -> dict[str, Any]:
     data = data or {}
-    return ask_door(backend, data["activity"])
+    return ask_door(backend, data.get("activity"))
 
 
 def main(argv: list[str]) -> dict[str, Any]:
