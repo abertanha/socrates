@@ -116,55 +116,59 @@ Four moves, all inside the two existing seams:
 7. As a session user, I want the Scenarios played out with me in
    conversation before the Assertion Tests run, so that the stretch is my
    elastic test and not paperwork.
-8. As an engine, I want the treadmill gate to count assertion records
+8. As a session user, I want the recorded Scenario minimum treated as a
+   floor rather than a verdict, so that when I judge the stretch
+   insufficient I can call for more Scenarios and the session simply
+   continues stretching.
+9. As an engine, I want the treadmill gate to count assertion records
    alongside scenario records, so that the cheapest compliant path is two
    recorded steps, not one.
-9. As a session user, I want to establish where the session's directory
+10. As a session user, I want to establish where the session's directory
    lives before the first verb runs, so that my Model never lands in my
    home directory by silent invention.
-10. As a session user resuming a session, I want to be asked whether to
+11. As a session user resuming a session, I want to be asked whether to
     look elsewhere for my state or start fresh when the expected root holds
     none, so that a changed working directory never silently re-greets me.
-11. As a session user, I want the deliverable audit to run before the
+12. As a session user, I want the deliverable audit to run before the
     session stops, so that materialization is always checked by the fixed
     instrument.
-12. As a session user, I want to be told when the fresh-reader audit is
+13. As a session user, I want to be told when the fresh-reader audit is
     unavailable and the weaker fallback is about to run, so that
     degradation is declared, never silent.
-13. As a conductor, I want the materialization payload itself to name the
+14. As a conductor, I want the materialization payload itself to name the
     audit as the next step, so that "only then stop" rides the channel I
     demonstrably obey.
-14. As a user running Socrates on a machine that has another `socrates`
+15. As a user running Socrates on a machine that has another `socrates`
    package installed, I want the bootstrap gate to refuse an import that
    does not resolve inside this repository, so that a stale or foreign
    engine cannot enforce a divergent method in Socrates' name.
-15. As an engine maintainer, I want the package to expose an identity
+16. As an engine maintainer, I want the package to expose an identity
     marker, so that the gate has something concrete to verify against.
-16. As a user on any machine, I want the skill to derive the repository
+17. As a user on any machine, I want the skill to derive the repository
     root and the glossary path by resolving its own real location, so that
     no absolute path in the document rots when the repo moves.
-17. As an engine, I want door asks to refuse activity names that are not
+18. As an engine, I want door asks to refuse activity names that are not
     modeling activities, so that a fabricated door cannot chain into
     Satisfaction.
-18. As a session user, I want the first question to arrive without the
+19. As a session user, I want the first question to arrive without the
     conductor spelunking the engine source, so that session start is fast
     and cheap.
-19. As a conductor, I want the invocation recipe in the skill text — verb
+20. As a conductor, I want the invocation recipe in the skill text — verb
     files are programs, run with the session root and the JSON payload —
     so that I execute verbs instead of discovering them.
-20. As a session user, I want real engine errors to stop the conductor and
+21. As a session user, I want real engine errors to stop the conductor and
     reach me as plain language, so that corruption is faced and never
     improvised around.
-21. As a session user stuck in a loop of refused answers, I want the
+22. As a session user stuck in a loop of refused answers, I want the
     conductor to reformulate as one open question after two failed
     renderings, so that the session never spins forever.
-22. As a session user who switches language mid-session, I want the
+23. As a session user who switches language mid-session, I want the
     session's language to follow me, so that the interview stays in the
     language I am actually speaking.
-23. As a conductor whose context was compacted, I want a pinned rule to
+24. As a conductor whose context was compacted, I want a pinned rule to
     re-run the reads before my next verb, so that resumption never runs on
     remembered state.
-24. As a session user crossing a chapter boundary, I want a brief
+25. As a session user crossing a chapter boundary, I want a brief
     orientation in the domain's own terms about what this stretch of the
     conversation is for, so that I know what kind of thinking helps before
     I answer.
@@ -254,7 +258,13 @@ Four moves, all inside the two existing seams:
 - **Scenario minimums and edge quotas are untouched.** The specimen's
   edges were varied across the session; the rot was silent filing and
   rubber-stamped assertions, not edge shape. Diversity enforcement would
-  add law without evidence.
+  add law without evidence. The recorded minimum is a **floor, never a
+  ceiling** (user ruling): it is what the engine counts as a pass, not a
+  verdict the conductor may invoke against the user — when the user
+  judges the stretch insufficient and calls for more Scenarios or harder
+  edges, that is ordinary lapidation and the session simply continues
+  stretching. The visibility duty exists precisely so the user can make
+  that judgment: records they never saw are judgments they never made.
 
 ## Testing Decisions
 
@@ -327,7 +337,9 @@ Four moves, all inside the two existing seams:
 - User rulings this cycle: the two existing seams (invocation surface +
   skill-text pins), no new ones; record-and-expose over latency
   enforcement for the ask–answer binding; the treadmill extends to
-  assertion records.
+  assertion records; the Scenario minimum stays two and is a floor, never
+  a ceiling — visibility lets the user demand more stretch, and the
+  conductor never invokes the recorded count against that demand.
 - The D6 residual (propose tag gate on the invocation surface mid-walk)
   is unchanged by this spec and stays a ticket-25 watch-item.
 - Acceptance remains ticket 25's: the next real hybrid session, judged
