@@ -16,9 +16,9 @@ you when to invoke which verb and how to talk; it prescribes no sequence —
 the engine holds the order. (The why of this architecture:
 `docs/adr/0006-skill-conducts-engine-enforces.md`. The glossary for every
 term used below — Proposition, Conflict, Batch, Quiet, Door, Treadmill,
-Valve — is `CONTEXT.md` at the Socrates repository's root — the repo this
-skill ships in; if this file was copied or linked elsewhere, that is
-`/home/shenmue/socrates/CONTEXT.md`. Read it before the session's first
+Valve — is `CONTEXT.md` at the root of the repository this skill ships in —
+the root the bootstrap gate derives from this file's resolved real
+location. Read it before the session's first
 question if you have not this session.)
 
 Conduct the interview in the user's language. Everything you say is plain
@@ -27,16 +27,31 @@ conversation — the machinery below never leaks into what the user reads.
 ## The bootstrap gate
 
 Before anything else, verify through your code execution that the engine is
-importable from this skill's clone: this file lives at
-`<repository>/.claude/skills/socrates/SKILL.md`, so the repository root is
-three directories up from it — execute code that puts that repository's
-`src` directory on the import path and imports the `socrates` package. If
-the import fails, the gate refuses to conduct: print the installation steps
-below to the user — no engine, no Socrates. Never simulate, approximate, or
-skip the gate: a session conducted without the engine is not Socrates, it is
-an improvisation wearing its name.
+importable — and that it is THIS repository's engine. Resolve this file's
+real location through any symlinks on the way (a deployed surface may reach
+this file through a link): the directory holding the resolved file is three
+directories below the repository root, so the root is three directories up
+from the resolved location. Then execute code that puts that repository's `src`
+directory on the import path, imports the `socrates` package, and asserts
+the import's identity: the package carries an identity marker
+(`__version__`), the imported package's own file location resolves inside
+that same repository — a package named `socrates` from somewhere else on
+the machine is not this engine — and the marker matches the version
+declared in the repository's `pyproject.toml` — an old engine sitting at
+the right path is stale, not current.
 
-Installation steps (print these when the gate fails):
+If the import fails, the gate refuses to conduct: print the installation
+steps below — no engine, no Socrates. If the import succeeds but the
+identity check fails, another Socrates answered: say so plainly — the
+engine on the import path is foreign or stale and is not the one this
+skill ships with, and no installation step fixes identity; re-point the
+import path at this repository's `src` directory and re-run the gate.
+Never simulate, approximate, or skip the gate: a session conducted without
+the engine is not Socrates, it is an improvisation wearing its name — and
+a session conducted on a foreign or stale engine enforces a method in
+Socrates' name that this repository never wrote.
+
+Installation steps (print these only when the import fails):
 
 - Install the repository this skill ships in as a package — its
   `pyproject.toml` at the root is the source — with your environment's
