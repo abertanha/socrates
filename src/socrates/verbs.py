@@ -386,6 +386,21 @@ def resume_door(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
             "answer": answer_echo,
         }
     pipeline = PipelineStore(backend)
+    # Quiet is counting, on this surface too (socrates-seam ticket 02):
+    # the middleware holds the same gate for the session surface, but the
+    # invocation door close had NO quiet gate — a chapter could close
+    # over unlapidated ground. Lapidated means the full pass on record:
+    # Scenarios AND the assertion record.
+    state = read_conduction_state(backend)
+    owed = [pid for pid, born in state.unlapidated if born == activity]
+    if state.label != TAIL and owed:
+        raise Refusal(
+            f"the chapter is not quiet: Proposition(s) "
+            f"{', '.join(owed)} born in '{activity}' have never been "
+            "through a pass — quiet is counting, so lapidate them "
+            "(Scenarios, then Assertion Tests) before closing",
+            ["scenarios", "assertion_tests"],
+        )
     try:
         # A chapter with no Propositions is vacuously quiet (D3): its
         # declaration opens and closes the door in one step.

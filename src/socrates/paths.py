@@ -5,6 +5,10 @@ PROPOSITIONS_PATH = "/model/propositions.json"
 REJECTION_GUARDRAIL_PATH = "/model/rejection_guardrail.json"
 PIPELINE_PATH = "/model/pipeline.json"
 SCENARIOS_PATH = "/model/scenarios.json"
+# The assertion record (socrates-seam ticket 02) — every Assertion Test
+# outcome, survivals included, each citing its scenario. Lapidation's
+# second step, on the record.
+ASSERTIONS_PATH = "/model/assertions.json"
 BATCHES_PATH = "/model/batches.json"
 CONFLICTS_PATH = "/model/conflicts.json"
 INFERENCE_STATE_PATH = "/model/inference_state.json"

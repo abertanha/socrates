@@ -17,6 +17,7 @@ from typing import Any, Literal
 from deepagents.backends.protocol import BackendProtocol
 
 from socrates.paths import (
+    ASSERTIONS_PATH,
     BATCHES_PATH,
     CONFLICTS_PATH,
     INFERENCE_STATE_PATH,
@@ -470,6 +471,7 @@ class InferenceEngine:
             raise ValueError("Assertion Tests require at least one outcome")
 
         surfaced: list[Conflict] = []
+        record: list[dict[str, Any]] = []
         conflicts = self._load_conflicts()
         for raw in outcomes:
             scenario_id = raw.get("scenario_id")
@@ -479,10 +481,21 @@ class InferenceEngine:
                 )
             scenario = scenarios[scenario_id]
             survives = raw.get("survives")
+            if survives is not True and survives is not False:
+                raise ValueError("Outcome.survives must be a boolean")
+            # Every outcome enters the record (socrates-seam ticket 02) —
+            # survivals included: the run is nothing, the record is the
+            # lapidation. A survival used to `continue` straight into
+            # nothing, and the specimen's rubber stamps left no trace.
+            record.append(
+                {
+                    "proposition_id": proposition_id,
+                    "scenario_id": scenario_id,
+                    "survives": survives,
+                }
+            )
             if survives is True:
                 continue
-            if survives is not False:
-                raise ValueError("Outcome.survives must be a boolean")
             kind = raw.get("kind")
             summary = str(raw.get("summary", "")).strip()
             if kind not in VALID_KINDS:
@@ -526,6 +539,9 @@ class InferenceEngine:
 
         conflicts.extend(surfaced)
         self._save_conflicts(conflicts)
+        # Saved only once every outcome has validated — the step stays
+        # transactional, no partial record on a malformed batch.
+        self._save_assertions(record)
         self._coverage.add_conflicts(self.current_pass(), len(surfaced))
         for conflict in surfaced:
             self._maybe_notify_unavoidable(conflict)
@@ -1226,6 +1242,16 @@ class InferenceEngine:
         self._backend.write(
             CONFLICTS_PATH,
             json.dumps({"conflicts": [asdict(c) for c in conflicts]}, indent=2),
+        )
+
+    def _save_assertions(self, record: list[dict[str, Any]]) -> None:
+        """Append one assertion batch to the record (socrates-seam ticket 02)."""
+        existing = self._read_json(ASSERTIONS_PATH) or {}
+        entries = existing.get("assertions", [])
+        entries.extend(record)
+        self._backend.write(
+            ASSERTIONS_PATH,
+            json.dumps({"assertions": entries}, indent=2),
         )
 
     def _load_batches(self) -> list[Batch]:

@@ -60,9 +60,15 @@ def _scenarios(*edges: str) -> str:
 
 
 def _activity_stub(
-    *, propose_statement: str, proposition_id: str, label: str, edges=("one", "many")
+    *,
+    propose_statement: str,
+    proposition_id: str,
+    label: str,
+    edges=("one", "many"),
+    outcome_ids: list[str],
 ) -> StubChatModel:
-    """Propose one Proposition, lapidate it, then close through the door."""
+    """Propose one Proposition, lapidate it (Scenarios, then the Assertion
+    Tests on record), then close through the door."""
     return StubChatModel(
         responses=[
             _tool_call(
@@ -77,6 +83,19 @@ def _activity_stub(
                     "scenarios_json": _scenarios(*edges),
                 },
                 f"{label}-scenarios",
+            ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": proposition_id,
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": sid, "survives": True}
+                            for sid in outcome_ids
+                        ]
+                    ),
+                },
+                f"{label}-assertions",
             ),
             _tool_call("complete_modeling_activity", {}, f"{label}-complete"),
             AIMessage(content=f"{label} activity complete."),
@@ -157,6 +176,19 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
                 },
                 "req-scenarios",
             ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p1",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s1", "survives": True},
+                            {"scenario_id": "s2", "survives": True},
+                        ]
+                    ),
+                },
+                "req-assertions",
+            ),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
             # Re-run after Iteration: same treadmill, then the door again.
@@ -173,6 +205,19 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
                 },
                 "req-scenarios-2",
             ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p4",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s7", "survives": True},
+                            {"scenario_id": "s8", "survives": True},
+                        ]
+                    ),
+                },
+                "req-assertions-2",
+            ),
             _tool_call("complete_modeling_activity", {}, "req-complete-2"),
             AIMessage(content="req activity re-run complete."),
         ],
@@ -182,11 +227,13 @@ def test_l4_iteration_proposes_upstream_confirms_and_reruns():
         propose_statement=domain_statement,
         proposition_id="p2",
         label="dom",
+        outcome_ids=["s3", "s4"],
     )
     behavioral_model = _activity_stub(
         propose_statement=behavioral_statement,
         proposition_id="p3",
         label="beh",
+        outcome_ids=["s5", "s6"],
     )
 
     main_model = StubChatModel(

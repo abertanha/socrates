@@ -66,14 +66,18 @@ def _activity_stub(
     *,
     statements: list[str],
     proposition_ids: list[str | None],
+    outcome_ids: dict[str, list[str]],
     label: str,
 ) -> StubChatModel:
     """A specialist walking the treadmill: each Proposition is lapidated
-    (Scenarios) before the next propose, then the chapter's door closes.
+    (Scenarios, then the Assertion Tests on record) before the next
+    propose, then the chapter's door closes.
 
     ``proposition_ids`` carries None for a statement that is never born as
     a Proposition (a functional requirement in Behavioral Specification) —
     nothing to lapidate, so no Scenarios call is scripted for it.
+    ``outcome_ids`` carries, per Proposition, the scenario ids its outcomes
+    cite (engine-assigned globally per session, so the test pins them).
     """
     assert len(statements) == len(proposition_ids)
     responses: list[AIMessage] = []
@@ -92,6 +96,21 @@ def _activity_stub(
                         "scenarios_json": _scenarios_json(f"{label}-{pid}"),
                     },
                     f"{label}-scenarios-{pid}",
+                )
+            )
+            responses.append(
+                _tool_call(
+                    "run_assertion_tests",
+                    {
+                        "proposition_id": pid,
+                        "outcomes_json": json.dumps(
+                            [
+                                {"scenario_id": sid, "survives": True}
+                                for sid in outcome_ids[pid]
+                            ]
+                        ),
+                    },
+                    f"{label}-assertions-{pid}",
                 )
             )
     responses.append(
@@ -113,11 +132,13 @@ def test_modeling_activity_pipeline_precedence_tags_and_conceptual_rules():
     requirements_model = _activity_stub(
         statements=[req_statement],
         proposition_ids=["p1"],
+        outcome_ids={"p1": ["s1", "s2"]},
         label="req",
     )
     domain_model = _activity_stub(
         statements=[domain_statement],
         proposition_ids=["p2"],
+        outcome_ids={"p2": ["s3", "s4"]},
         label="dom",
     )
     # Behavioral: first attempt is a functional requirement (never born as a
@@ -126,6 +147,7 @@ def test_modeling_activity_pipeline_precedence_tags_and_conceptual_rules():
     behavioral_model = _activity_stub(
         statements=[functional_statement, behavioral_statement],
         proposition_ids=[None, "p3"],
+        outcome_ids={"p3": ["s5", "s6"]},
         label="beh",
     )
 

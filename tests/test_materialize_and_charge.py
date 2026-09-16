@@ -53,7 +53,14 @@ def _call(module, tmp_path: Path, data=None):
 
 def _seed_accepted_ground(tmp_path: Path) -> None:
     """A minimal accepted ground through the files alone."""
-    from socrates.invocations import accept, opening, propose, resume, scenarios
+    from socrates.invocations import (
+        accept,
+        assertion_tests,
+        opening,
+        propose,
+        resume,
+        scenarios,
+    )
 
     _call(opening, tmp_path)
     _call(resume, tmp_path, {"canonical": NEED, "raw": "checkout"})
@@ -62,7 +69,8 @@ def _seed_accepted_ground(tmp_path: Path) -> None:
         _call(accept, tmp_path, {"proposition_id": f"p{index}"})
         _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
         # Review 3: the treadmill is engine law now — lapidate this
-        # Proposition before the next propose.
+        # Proposition before the next propose. Ticket 02 (socrates-seam):
+        # lapidation is the full pass on record — the assertion record too.
         _call(scenarios, tmp_path, {
             "proposition_id": f"p{index}",
             "scenarios": [
@@ -70,6 +78,13 @@ def _seed_accepted_ground(tmp_path: Path) -> None:
                  "need_relevant": True},
                 {"description": "edge many", "edge": "many",
                  "need_relevant": True},
+            ],
+        })
+        _call(assertion_tests, tmp_path, {
+            "proposition_id": f"p{index}",
+            "outcomes": [
+                {"scenario_id": f"s{2 * index - 1}", "survives": True},
+                {"scenario_id": f"s{2 * index}", "survives": True},
             ],
         })
 

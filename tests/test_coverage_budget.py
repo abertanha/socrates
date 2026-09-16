@@ -248,6 +248,19 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                 },
                 "sc-found",
             ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p1",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s1", "survives": True},
+                            {"scenario_id": "s2", "survives": True},
+                        ]
+                    ),
+                },
+                "assert-found",
+            ),
             _tool_call("propose_proposition", {"statement": cand_a}, "p2"),
             _tool_call(
                 "record_scenarios",
@@ -256,6 +269,19 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                     "scenarios_json": json.dumps(_two_scenarios("a")),
                 },
                 "sc-a",
+            ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p2",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s3", "survives": True},
+                            {"scenario_id": "s4", "survives": True},
+                        ]
+                    ),
+                },
+                "assert-a-quiet",
             ),
             _tool_call("propose_proposition", {"statement": cand_b}, "p3"),
             _tool_call(
@@ -266,6 +292,19 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                 },
                 "sc-b",
             ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p3",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s5", "survives": True},
+                            {"scenario_id": "s6", "survives": True},
+                        ]
+                    ),
+                },
+                "assert-b-quiet",
+            ),
             _tool_call("propose_proposition", {"statement": cand_c}, "p4"),
             _tool_call(
                 "record_scenarios",
@@ -274,6 +313,19 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                     "scenarios_json": json.dumps(_two_scenarios("c")),
                 },
                 "sc-c",
+            ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p4",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s7", "survives": True},
+                            {"scenario_id": "s8", "survives": True},
+                        ]
+                    ),
+                },
+                "assert-c-quiet",
             ),
             _tool_call(
                 "run_assertion_tests",
@@ -356,6 +408,19 @@ def test_coverage_budget_scales_inversely_and_propagates_to_subagents():
                     "scenarios_json": json.dumps(_two_scenarios("l2")),
                 },
                 "sc-l2",
+            ),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p5",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s9", "survives": True},
+                            {"scenario_id": "s10", "survives": True},
+                        ]
+                    ),
+                },
+                "assert-l2",
             ),
             _tool_call("complete_modeling_activity", {}, "dom-complete"),
             AIMessage(content="dom activity complete."),

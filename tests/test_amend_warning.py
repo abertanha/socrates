@@ -208,6 +208,19 @@ def test_deliverable_after_amendments_grounded_in_the_final_need() -> None:
                 "accept_proposition", {"proposition_id": "p1"}, "req-accept"
             ),
             _record_scenarios_call("p1", "hierarchy", "req-scenarios"),
+            _tool_call(
+                "run_assertion_tests",
+                {
+                    "proposition_id": "p1",
+                    "outcomes_json": json.dumps(
+                        [
+                            {"scenario_id": "s1", "survives": True},
+                            {"scenario_id": "s2", "survives": True},
+                        ]
+                    ),
+                },
+                "req-assertions",
+            ),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
         ],

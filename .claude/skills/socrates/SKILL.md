@@ -146,9 +146,12 @@ The verbs, and when to invoke them:
   the Rejection Guardrail, the Model's negative space.
 - `scenarios` / `assertion_tests` — to lapidate a candidate: stretch it
   toward its edges (zero, one, many, none, intersections — not comfortable
-  middles), play the Scenarios out with the user, and record where it breaks
-  as Conflicts. Ground born from resolving a Conflict enters immediately,
-  never queued.
+  middles), play the Scenarios out with the user before recording the
+  Assertion Tests, and record where it breaks as Conflicts. The recorded
+  minimum is a floor, never a ceiling — when the user judges the stretch
+  insufficient, you never invoke the recorded count against them; you ask
+  for more Scenarios and keep stretching. Ground born from resolving a
+  Conflict enters immediately, never queued.
 - `reconcile` — after new ground lands, to cross it against the accepted
   Model for latent contradictions. Surfacing nothing is a valid, honest
   result — never invent Conflicts to fill the rhythm.

@@ -32,6 +32,7 @@ from socrates.conduction import (
 )
 from socrates.coverage import RECURSION_LIMIT_LEAN
 from socrates.paths import (
+    ASSERTIONS_PATH,
     BATCHES_PATH,
     CONFLICTS_PATH,
     COVERAGE_PATH,
@@ -115,6 +116,23 @@ def _record_scenarios_call(proposition_id: str, prefix: str, call_id: str) -> AI
         {
             "proposition_id": proposition_id,
             "scenarios_json": json.dumps(_two_scenarios(prefix)),
+        },
+        call_id,
+    )
+
+
+def _run_assertion_tests_call(
+    proposition_id: str, scenario_ids: list[str], call_id: str
+) -> AIMessage:
+    """Ticket 02 (socrates-seam): lapidation needs the assertion record —
+    the pass's second step, on the file, survivals included."""
+    return _tool_call(
+        "run_assertion_tests",
+        {
+            "proposition_id": proposition_id,
+            "outcomes_json": json.dumps(
+                [{"scenario_id": sid, "survives": True} for sid in scenario_ids]
+            ),
         },
         call_id,
     )
@@ -492,9 +510,10 @@ def test_orchestrator_propose_tag_gate() -> None:
 
 def test_lapidation_and_pending_batch_are_derived_from_the_model(tmp_path) -> None:
     """ADR-0001: no new persisted fields — lapidation and the pending Batch
-    are read facts. Ruling: a Proposition is lapidated once ≥1 Scenario is
-    recorded for it; Rejected/Superseded ground is dead (it can never be
-    lapidated) and never blocks the treadmill."""
+    are read facts. Ruling (ticket 17, amended by socrates-seam ticket 02 on
+    the fifth specimen's evidence): a Proposition is lapidated once ≥1
+    Scenario AND an assertion record are on file; Rejected/Superseded ground
+    is dead (it can never be lapidated) and never blocks the treadmill."""
     backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=True)
     backend.write(NEED_PATH, "Marketplace checkout payments domain.")
     backend.write(
@@ -559,13 +578,35 @@ def test_lapidation_and_pending_batch_are_derived_from_the_model(tmp_path) -> No
         ),
     )
 
+    # p2 has its Scenario but no assertion record yet: scenarios alone no
+    # longer lapidate (socrates-seam ticket 02).
     state = read_conduction_state(backend)
     assert state.need_registered is True
     assert state.unlapidated == (
         ("p1", "requirements"),
+        ("p2", "requirements"),
         ("p5", "requirements"),
     )
     assert state.pending_batch is True
+
+    backend.write(
+        ASSERTIONS_PATH,
+        json.dumps(
+            {
+                "assertions": [
+                    {
+                        "proposition_id": "p2",
+                        "scenario_id": "s1",
+                        "survives": True,
+                    }
+                ]
+            }
+        ),
+    )
+    assert read_conduction_state(backend).unlapidated == (
+        ("p1", "requirements"),
+        ("p5", "requirements"),
+    )
 
     backend.write(
         BATCHES_PATH,
@@ -628,6 +669,7 @@ def test_opening_once_and_wrong_chapter_task_redirect() -> None:
                 "req-propose",
             ),
             _record_scenarios_call("p1", "authorization", "req-scenarios"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
         ],
@@ -779,10 +821,13 @@ def test_full_pass_runs_inside_a_chapter() -> None:
             _tool_call("accept_proposition", {"proposition_id": "p1"}, "dom-acc-p1"),
             # Lapidate p1 before the next propose opens (the treadmill).
             _record_scenarios_call("p1", "foundation", "dom-scenarios-p1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "dom-scenarios-p1-at"),
             _tool_call("propose_proposition", {"statement": cand_a}, "dom-prop-p2"),
             _record_scenarios_call("p2", "cand-a", "dom-scenarios-p2"),
+            _run_assertion_tests_call("p2", ["s3", "s4"], "dom-scenarios-p2-at"),
             _tool_call("propose_proposition", {"statement": cand_b}, "dom-prop-p3"),
             _record_scenarios_call("p3", "cand-b", "dom-scenarios-p3"),
+            _run_assertion_tests_call("p3", ["s5", "s6"], "dom-scenarios-p3-at"),
             _tool_call("select_exploration_budget", {}, "dom-budget"),
             _tool_call(
                 "run_assertion_tests",
@@ -1027,6 +1072,7 @@ def test_door_unrecognized_and_negated_answers_keep_the_chapter_open() -> None:
                 "req-propose-1",
             ),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete-1"),
             # Mumble → not_yet: knock again.
             _tool_call("complete_modeling_activity", {}, "req-complete-2"),
@@ -1098,6 +1144,7 @@ def test_door_not_yet_keeps_the_chapter_open_with_the_valve_live() -> None:
                 "req-propose-1",
             ),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete-1"),
             # The door was answered "not yet" — the valve stays live.
             _tool_call(
@@ -1106,6 +1153,7 @@ def test_door_not_yet_keeps_the_chapter_open_with_the_valve_live() -> None:
                 "req-propose-2",
             ),
             _record_scenarios_call("p2", "email", "req-scenarios-2"),
+            _run_assertion_tests_call("p2", ["s3", "s4"], "req-scenarios-2-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete-2"),
             AIMessage(content="req activity complete."),
         ],
@@ -1166,6 +1214,7 @@ def test_door_satisfaction_answer_routes_to_satisfaction_without_closing() -> No
             ),
             _tool_call("accept_proposition", {"proposition_id": "p1"}, "req-acc-1"),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity stays open."),
         ],
@@ -1231,6 +1280,7 @@ def test_quiet_redirects_a_premature_completion_declaration() -> None:
             # Premature: p1 has never been through a pass.
             _tool_call("complete_modeling_activity", {}, "req-complete-early"),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
         ],
@@ -1289,12 +1339,14 @@ def test_treadmill_redirects_until_the_predecessor_is_lapidated() -> None:
                 "req-propose-early",
             ),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call(
                 "propose_proposition",
                 {"statement": "Checkout must also capture the buyer's email."},
                 "req-propose-2",
             ),
             _record_scenarios_call("p2", "email", "req-scenarios-2"),
+            _run_assertion_tests_call("p2", ["s3", "s4"], "req-scenarios-2-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
         ],
@@ -1352,12 +1404,14 @@ def test_valve_ground_born_from_probe_resolution_enters_immediately() -> None:
                 "req-propose-1",
             ),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call(
                 "propose_proposition",
                 {"statement": "Candidate A: tax included in the total."},
                 "req-propose-2",
             ),
             _record_scenarios_call("p2", "cand-a", "req-scenarios-2"),
+            _run_assertion_tests_call("p2", ["s3", "s4"], "req-scenarios-2-at"),
             _tool_call(
                 "propose_proposition",
                 {"statement": "Candidate B: tax excluded from the total."},
@@ -1392,7 +1446,9 @@ def test_valve_ground_born_from_probe_resolution_enters_immediately() -> None:
             # The Probe closed pass 1; pass 2 reconciles before lapidation.
             _tool_call("reconcile", {"findings_json": "[]"}, "req-reconcile"),
             _record_scenarios_call("p3", "cand-b", "req-scenarios-3"),
+            _run_assertion_tests_call("p3", ["s5", "s6"], "req-scenarios-3-at"),
             _record_scenarios_call("p4", "probe-born", "req-scenarios-4"),
+            _run_assertion_tests_call("p4", ["s7", "s8"], "req-scenarios-4-at"),
             _tool_call("complete_modeling_activity", {}, "req-complete"),
             AIMessage(content="req activity complete."),
         ],
@@ -1474,6 +1530,7 @@ def test_deferred_conflict_never_blocks_the_door_and_rides_to_the_warning() -> N
                 "req-propose-1",
             ),
             _record_scenarios_call("p1", "authorization", "req-scenarios-1"),
+            _run_assertion_tests_call("p1", ["s1", "s2"], "req-scenarios-1-at"),
             _tool_call(
                 "run_assertion_tests",
                 {

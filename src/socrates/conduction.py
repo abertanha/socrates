@@ -47,6 +47,7 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import ToolMessage
 
 from socrates.paths import (
+    ASSERTIONS_PATH,
     BATCHES_PATH,
     NEED_PATH,
     PROPOSITIONS_PATH,
@@ -179,20 +180,29 @@ def _read_json(backend: BackendProtocol, path: str) -> dict[str, Any] | None:
 def _read_unlapidated(
     backend: BackendProtocol,
 ) -> tuple[tuple[str, ModelingActivity], ...]:
-    """Live Propositions with no recorded Scenario — never through a pass.
+    """Live Propositions never through a full pass.
 
-    Lapidation ruling (ticket 17): a Proposition counts as lapidated once at
-    least one Scenario is recorded for it. `record_scenarios` is the pass's
-    first lapidation step, so it is the earliest — and sufficient — signal:
-    Assertion Tests always follow Scenarios, acceptance is a user judgment
-    (never bookkeeping), and "alive when an earlier pass completed" is not
-    derivable without new persisted state.
+    Lapidation ruling (ticket 17), AMENDED (socrates-seam ticket 02, on
+    the fifth specimen's evidence): a Proposition counts as lapidated
+    only with at least one recorded Scenario AND a recorded Assertion
+    outcome set. The old ruling trusted the conductor to follow
+    Scenarios with Assertion Tests; the specimen ran 36 Assertion Tests
+    and rubber-stamped every one `survives: true`, and the engine —
+    discarding survivals — held no trace. The record, not the run, is
+    what the engine can trust. This is THE definition: the treadmill
+    gate, the door's quiet rule, and the propose-ordering gate all read
+    it through `read_conduction_state`.
     """
     propositions = _read_json(backend, PROPOSITIONS_PATH) or {}
     scenarios = _read_json(backend, SCENARIOS_PATH) or {}
-    lapidated = {
+    assertions = _read_json(backend, ASSERTIONS_PATH) or {}
+    scenario_ids = {
         s.get("proposition_id") for s in scenarios.get("scenarios", [])
     }
+    assertion_ids = {
+        a.get("proposition_id") for a in assertions.get("assertions", [])
+    }
+    lapidated = scenario_ids & assertion_ids
     return tuple(
         (item["id"], item["activity"])
         for item in propositions.get("propositions", [])
