@@ -20,11 +20,12 @@ and the invocation files are two implementations of the same seam.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from deepagents.backends.protocol import BackendProtocol
 
-from socrates.paths import PENDING_QUESTION_PATH
+from socrates.paths import ANSWERS_PATH, PENDING_QUESTION_PATH
 
 # Canonical tokens — closed, English, language-agnostic core. The session
 # language lives outside the engine; free replies are classified into
@@ -150,16 +151,25 @@ def read_pending(backend: BackendProtocol) -> dict[str, Any] | None:
     return pending
 
 
+def _now() -> str:
+    """The moment, as a plain UTC ISO-8601 fact (socrates-seam ticket 01)."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 def begin_pending(backend: BackendProtocol, payload: dict[str, Any]) -> dict[str, Any]:
     """Persist the pending question and return its payload.
 
-    Re-asking the same kind about the same subject re-presents the
-    persisted question unchanged (idempotence — a Batch is never created
-    twice for one question); the same kind about a DIFFERENT subject, or
-    any other kind, refuses naming the pending one.
+    The payload is stamped with ``asked_at`` — the moment the question
+    stood — so the answer can later be weighed against it. Re-asking the
+    same kind about the same subject re-presents the persisted question
+    unchanged (idempotence — a Batch is never created twice for one
+    question) with its ORIGINAL stamp: the question has stood since it
+    was first asked. The same kind about a DIFFERENT subject, or any
+    other kind, refuses naming the pending one.
     """
     existing = read_pending(backend)
     if existing is None:
+        payload = {**payload, "asked_at": _now()}
         backend.write(PENDING_QUESTION_PATH, json.dumps(payload, indent=2))
         return payload
     if existing["kind"] == payload["kind"] and existing.get(
@@ -175,7 +185,10 @@ def refresh_pending(backend: BackendProtocol, payload: dict[str, Any]) -> dict[s
     The question itself re-presents unchanged (same kind, same subject,
     same words); only its derived context is brought current — an
     advisory warning recomputed, never a stale picture of the session.
+    The stamp comes current too: the user is being asked again now, and
+    the answer they give answers this presentation.
     """
+    payload = {**payload, "asked_at": _now()}
     backend.write(PENDING_QUESTION_PATH, json.dumps(payload, indent=2))
     return payload
 
@@ -219,6 +232,55 @@ def guard_pending(
 
 def clear_pending(backend: BackendProtocol) -> None:
     backend.delete(PENDING_QUESTION_PATH)
+
+
+def record_answered(
+    backend: BackendProtocol,
+    *,
+    kind: str,
+    subject: Any,
+    asked_at: str | None,
+    canonical: Any,
+    raw: Any,
+    answered_at: str | None = None,
+) -> dict[str, Any]:
+    """Append the answer event to the session's answer log.
+
+    The ask–answer binding as data (socrates-seam ticket 01): when the
+    answer was applied, against when its question was asked. Facts only —
+    nothing reads the log to refuse or route anything; the Satisfaction
+    warning weighs it, and nothing else. A question that was never
+    stamped (an older marker) still logs its answer with ``asked_at``
+    None: the pairing simply cannot be judged.
+
+    ``canonical``/``raw`` are stored when they are words and left None
+    when the answer rode as data (a Probe's resolutions), so the log
+    stays a record of decisions, not payloads.
+    """
+    entry = {
+        "kind": kind,
+        "subject": subject,
+        "asked_at": asked_at,
+        "answered_at": answered_at or _now(),
+        "canonical": canonical if isinstance(canonical, str) else None,
+        "raw": raw if isinstance(raw, str) else None,
+    }
+    log = read_answer_log(backend)
+    log.append(entry)
+    backend.write(ANSWERS_PATH, json.dumps(log, indent=2))
+    return entry
+
+
+def read_answer_log(backend: BackendProtocol) -> list[dict[str, Any]]:
+    """The recorded answer events, oldest first; unreadable is empty."""
+    result = backend.read(ANSWERS_PATH)
+    if result.error or result.file_data is None:
+        return []
+    try:
+        log = json.loads(result.file_data["content"])
+    except json.JSONDecodeError:
+        return []
+    return log if isinstance(log, list) else []
 
 
 def parse_envelope(answer: Any) -> tuple[Any, Any]:

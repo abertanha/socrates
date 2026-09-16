@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from deepagents.backends.protocol import BackendProtocol
@@ -28,6 +29,7 @@ from socrates.asking import (
     clear_pending,
     guard_pending,
     parse_envelope,
+    read_answer_log,
     require_pending,
     token_refusal,
 )
@@ -51,6 +53,15 @@ ProbeAction = Literal[
 ]
 
 MIN_SCENARIOS_PER_PROPOSITION = 2
+
+# The self-answer window (socrates-seam ticket 01): an answer applied
+# this soon after its ask could not have crossed a rendered turn and a
+# human reader — it is the compound-command signature. Deliberately
+# generous to the honest relay (render turn + reading + typing + a fresh
+# process lands well past it; a compound lands inside the interpreter
+# startups). A floor on suspicion, never a gate: nothing is refused on
+# it — the warning surfaces the count and the user weighs it.
+FAST_ANSWER_WINDOW_SECONDS = 5.0
 
 # The Probe question's accepted answers (AskHuman, ticket 28) — the
 # admissible resolution actions, with what each carries and its limits.
@@ -92,6 +103,23 @@ _ITERATION_RESUME_CONTRACT = (
     "Resume with {canonical, raw}; canonical is `confirm` (take the "
     "proposal) or the name of a Modeling Activity to reopen instead."
 )
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    """A timezone-aware UTC moment, or None for anything that is not one.
+
+    Naive timestamps are read as UTC; anything unparseable is None — a
+    binding that cannot be judged is skipped, never guessed.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment
 
 
 def _iteration_answers(proposed: ModelingActivity) -> list[dict[str, str]]:
@@ -775,6 +803,7 @@ class InferenceEngine:
         """
         deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
         amendments = read_amendments(self._backend)
+        self_answered = self._self_answered()
         pipeline = PipelineStore(self._backend).snapshot()
         completed = pipeline.get("completed", ())
         active = pipeline.get("active")
@@ -785,7 +814,12 @@ class InferenceEngine:
             and activity != active
             and activity != visiting
         ]
-        if not deferred and not never_visited and not amendments:
+        if (
+            not deferred
+            and not never_visited
+            and not amendments
+            and not self_answered
+        ):
             return None
         entries: list[dict[str, Any]] = []
         for c in deferred:
@@ -810,13 +844,42 @@ class InferenceEngine:
             )
         # Weight descending; ties to the Requirements side; id for determinism.
         entries.sort(key=lambda e: (-e["weight"], not e["requirements"], e["id"]))
-        return {
+        warning = {
             "kind": "deferred_conflicts",
             "blocking": False,
             "conflicts": entries,
             "chapters_never_visited": never_visited,
             "amendments": amendments,
         }
+        if self_answered:
+            # The signal is present or absent — never a zero-filled count
+            # (socrates-seam ticket 01).
+            warning["self_answered"] = {
+                "count": len(self_answered),
+                "answers": self_answered,
+            }
+        return warning
+
+    def _self_answered(self) -> list[dict[str, Any]]:
+        """The recorded answers that arrived faster than a human can read
+        their question — the ask–answer binding weighed at the end.
+
+        Pairs without a stamp (an older marker) cannot be judged and are
+        skipped; the window is generous to the honest relay, and nothing
+        anywhere refuses on it — this is the user's information, not a
+        gate (socrates-seam ticket 01).
+        """
+        fast: list[dict[str, Any]] = []
+        for entry in read_answer_log(self._backend):
+            asked = _parse_iso(entry.get("asked_at"))
+            answered = _parse_iso(entry.get("answered_at"))
+            if asked is None or answered is None:
+                continue
+            if (
+                answered - asked
+            ).total_seconds() < FAST_ANSWER_WINDOW_SECONDS:
+                fast.append(entry)
+        return fast
 
     def _apply_resolutions(
         self,

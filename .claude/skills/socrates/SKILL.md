@@ -131,7 +131,12 @@ The verbs, and when to invoke them:
 - `resume` — whenever a question is pending: the Opening's Need, a Need
   amendment, an acceptance or rejection, the door, Satisfaction, a Probe's
   resolutions, an Iteration's confirm. The pending payload says which and
-  what it accepts; you classify and resume.
+  what it accepts; you classify and resume — and you
+  never answer an ask in the same command that asked it: render the
+  question, end your turn, and wait. The user's words, arriving in a
+  later turn, are what resumes. The session's Satisfaction warning may
+  name answers that arrived faster than a human could have given them;
+  relay it as the information it is.
 - `propose` — when the user's answer has distilled into a candidate worth
   testing: a term definition, a boundary, a behavior rule, in their own
   words where possible.

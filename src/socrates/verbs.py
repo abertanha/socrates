@@ -39,6 +39,7 @@ from socrates.asking import (
     guard_pending,
     parse_envelope,
     read_pending,
+    record_answered,
     refresh_pending,
     require_pending,
     token_refusal,
@@ -497,6 +498,15 @@ def resume_pending(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
     invocation surface resumes orchestrator-style — accepts and rejections
     re-raise the deferred Conflicts the applied ground touches
     (``touch=True``, ticket 17's one-regime ruling).
+
+    Every applied answer is logged with its binding — when it arrived
+    against when its question was asked (socrates-seam ticket 01). The
+    recording lives HERE, on the invocation resume door, and nowhere
+    else: this is the seam a conductor drives alone, the seam the fifth
+    specimen's compound self-answers ran through. The session surface's
+    interrupts are structurally human; logging them would add noise, not
+    honesty. The log is data — nothing refuses or routes on it; a failed
+    apply (question still standing) logs nothing.
     """
     pending = read_pending(backend)
     if pending is None:
@@ -510,6 +520,7 @@ def resume_pending(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
             }
         )
     kind = pending["kind"]
+    asked_at = pending.get("asked_at")
     if kind == "probe":
         result = InferenceEngine(backend).probe_resume(answer)
     elif kind == "iteration":
@@ -531,6 +542,17 @@ def resume_pending(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
             f"Pending question of unknown kind {kind!r}",
             ["pending_question"],
         )
+    canonical, raw = parse_envelope(answer)
+    if result.get("ok") is not False:
+        entry = record_answered(
+            backend,
+            kind=kind,
+            subject=pending.get("subject"),
+            asked_at=asked_at,
+            canonical=canonical,
+            raw=raw,
+        )
+        result["answered_at"] = entry["answered_at"]
     # The engine's apply results state their success as data; the Probe's
     # and Iteration's ride bare — the resume door normalizes them.
     result.setdefault("ok", True)
