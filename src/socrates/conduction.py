@@ -120,6 +120,48 @@ _LAPIDATION_NEXT = ["record_scenarios", "run_assertion_tests"]
 _RESOLVE_BATCH_NEXT = ["resolve the pending Probe Batch"]
 
 
+def quiet_debt(
+    state: ConductionState,
+    activity: ModelingActivity | None,
+) -> tuple[str | None, list[str] | None]:
+    """What the chapter still owes before its door may close — ONE
+    definition for both surfaces (socrates-seam ticket 02): the
+    never-passed Propositions born in it, and any Probe Batch that still
+    awaits the user. Returns ``("lapidate", owed_ids)``,
+    ``("batch", None)``, or ``(None, None)`` when the chapter is quiet.
+    The lapidation ruling has been amended once already; this is the one
+    place the next amendment lands."""
+    if activity is not None:
+        owed = [pid for pid, born in state.unlapidated if born == activity]
+        if owed:
+            return "lapidate", owed
+    if state.pending_batch:
+        return "batch", None
+    return None, None
+
+
+def quiet_debt_reason(
+    debt: str | None,
+    owed: list[str] | None,
+    activity: ModelingActivity | None,
+) -> str:
+    """The one wording for the debt, shared by every surface — surfaces
+    differ only in the vocabulary of their admissible next verbs, never
+    in the definition of quiet."""
+    if debt == "lapidate":
+        return (
+            f"the chapter is not quiet: Proposition(s) "
+            f"{', '.join(owed)} born in '{activity}' have never been "
+            "through a pass — quiet is counting, so lapidate them "
+            "(Scenarios, then Assertion Tests) before the chapter closes"
+        )
+    return (
+        "the chapter is not quiet: a Probe Batch still awaits the "
+        "user — resolve or defer every Conflict in it before the "
+        "chapter closes"
+    )
+
+
 @dataclass(frozen=True)
 class ConductionState:
     """The session's conduction state, derived — never persisted (ADR-0001)."""
@@ -432,34 +474,22 @@ def _check_quiet(
     Batch awaits the user on any ground. Deferred Conflicts are not a fact
     the door reads at all — parking never blocks. Bookkeeping only, never
     a quality judgment (ADR-0002)."""
-    if activity is not None:
-        owed = [
-            pid for pid, born in state.unlapidated if born == activity
-        ]
-        if owed:
-            return _redirect(
-                state,
-                COMPLETE_TOOL,
-                {},
-                admissible_next=list(_LAPIDATION_NEXT),
-                reason=(
-                    f"the chapter is not quiet: Proposition(s) "
-                    f"{', '.join(owed)} born in '{activity}' have never "
-                    "been through a pass — quiet is counting, so lapidate "
-                    "them before declaring completion"
-                ),
-            )
-    if state.pending_batch:
+    debt, owed = quiet_debt(state, activity)
+    if debt == "lapidate":
+        return _redirect(
+            state,
+            COMPLETE_TOOL,
+            {},
+            admissible_next=list(_LAPIDATION_NEXT),
+            reason=quiet_debt_reason(debt, owed, activity),
+        )
+    if debt == "batch":
         return _redirect(
             state,
             COMPLETE_TOOL,
             {},
             admissible_next=list(_RESOLVE_BATCH_NEXT),
-            reason=(
-                "the chapter is not quiet: a Probe Batch still awaits the "
-                "user — resolve or defer every Conflict in it before "
-                "declaring completion"
-            ),
+            reason=quiet_debt_reason(debt, owed, activity),
         )
     return None
 

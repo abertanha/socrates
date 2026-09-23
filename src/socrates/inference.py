@@ -557,7 +557,15 @@ class InferenceEngine:
         question is pending re-presents it unchanged (one Batch per
         question); any other asking verb while it is pending is refused.
         """
-        existing = guard_pending(self._backend, "probe")
+        # The guard fingerprint is the subject the payload carries (the
+        # Batch id), derived from the Batch's own record — a re-ask
+        # re-presents the standing question, whose Batch is the one still
+        # open; the pending marker never gets to define its own identity.
+        open_batch_id = next(
+            (b.id for b in self._load_batches() if b.status == "open"),
+            None,
+        )
+        existing = guard_pending(self._backend, "probe", open_batch_id)
         if existing is not None:
             return existing
 
@@ -594,6 +602,7 @@ class InferenceEngine:
             self._backend,
             {
                 "kind": "probe",
+                "subject": batch.id,
                 "batch_id": batch.id,
                 "question": (
                     f"Batch {batch.id} holds {len(open_conflicts)} open "
@@ -887,13 +896,17 @@ class InferenceEngine:
         """
         fast: list[dict[str, Any]] = []
         for entry in read_answer_log(self._backend):
+            if not isinstance(entry, dict):
+                continue
             asked = _parse_iso(entry.get("asked_at"))
             answered = _parse_iso(entry.get("answered_at"))
             if asked is None or answered is None:
                 continue
-            if (
-                answered - asked
-            ).total_seconds() < FAST_ANSWER_WINDOW_SECONDS:
+            delta = (answered - asked).total_seconds()
+            # A negative delta is clock skew between the two stamps (the
+            # resumed-session case), not evidence — unjudgeable pairs are
+            # skipped, never guessed into the record.
+            if 0 <= delta < FAST_ANSWER_WINDOW_SECONDS:
                 fast.append(entry)
         return fast
 

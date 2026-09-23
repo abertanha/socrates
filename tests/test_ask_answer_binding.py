@@ -166,6 +166,110 @@ def test_an_untimestamped_entry_is_skipped_not_counted(tmp_path):
     assert "self_answered" not in warning
 
 
+def test_every_log_entry_names_its_subject(tmp_path):
+    """The warning says WHAT was self-answered, not just that something
+    was: the probe payload carries its Batch as the subject (the kind the
+    fifth specimen abused), and the Opening names the Need."""
+    from deepagents.backends.filesystem import FilesystemBackend
+
+    from socrates.inference import InferenceEngine
+    from socrates.invocations import probe, resume
+    from socrates.proposition import PropositionStore
+
+    _seed_need(tmp_path)
+    backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=True)
+    store = PropositionStore(backend)
+    store.propose("Payment status is always Authorized.", "domain_modeling")
+    engine = InferenceEngine(backend)
+    engine.record_scenarios("p1", [
+        {"description": "edge one", "edge": "one", "need_relevant": True},
+        {"description": "edge many", "edge": "many", "need_relevant": True},
+    ])
+    engine.run_assertion_tests("p1", [
+        {"scenario_id": "s1", "survives": True},
+        {"scenario_id": "s2", "survives": False,
+         "kind": "contrariety", "summary": "Many breaks one."},
+    ])
+
+    _call(probe, tmp_path)
+    _call(resume, tmp_path, {
+        "canonical": {"resolutions": [
+            {"conflict_id": "c1", "action": "dismiss"}
+        ]},
+        "raw": "dispensa",
+    })
+
+    log = _answers_log(tmp_path)
+    subjects = [(entry["kind"], entry["subject"]) for entry in log]
+    assert subjects == [("opening", "need"), ("probe", "b1")], (
+        "an entry lost its subject"
+    )
+
+
+def test_a_declined_answer_is_logged_like_any_answer(tmp_path):
+    """A decline is an applied answer (the review's blind spot): the
+    compound `accept && resume "decline"` pattern must leave the same
+    trace an acceptance does — the binding log is about the ask–answer
+    pair, not about the answer's polarity."""
+    from socrates.invocations import accept, propose, resume
+
+    _seed_need(tmp_path)
+    _call(propose, tmp_path, {
+        "statement": "A Payment is the transfer of value.",
+        "activity": "requirements",
+    })
+    _call(accept, tmp_path, {"proposition_id": "p1"})
+    _call(resume, tmp_path, {"canonical": "decline", "raw": "não"})
+
+    log = _answers_log(tmp_path)
+    assert [entry["canonical"] for entry in log] == [NEED, "decline"], (
+        "the decline vanished from the record"
+    )
+    assert log[-1]["raw"] == "não"
+
+
+def test_a_clock_skewed_pair_is_never_counted(tmp_path):
+    """A negative delta (the answer stamped before the ask — clock skew
+    across a resumed session) is unjudgeable, not evidence: the signal
+    skips it rather than naming a human a self-answerer."""
+    from socrates.invocations import satisfaction
+
+    _seed_need(tmp_path)
+    now = datetime.now(timezone.utc)
+    (tmp_path / "model" / "answers.json").write_text(json.dumps([
+        {
+            "kind": "opening",
+            "subject": None,
+            "asked_at": (now + timedelta(seconds=30)).isoformat(),
+            "answered_at": now.isoformat(),
+            "canonical": NEED,
+            "raw": "checkout",
+        },
+    ]))
+    payload = _call(satisfaction, tmp_path)
+    warning = payload["deferred_warning"]
+    assert warning is not None, "mid-walk the warning still informs"
+    assert "self_answered" not in warning, (
+        "clock skew surfaced as a self-answer"
+    )
+
+
+def test_a_malformed_log_entry_is_skipped_not_fatal(tmp_path):
+    """A valid-JSON log holding a non-dict element (a hand edit gone
+    wrong) never kills the Satisfaction ask: the unjudgeable element is
+    skipped, never guessed from."""
+    from socrates.invocations import satisfaction
+
+    _seed_need(tmp_path)
+    log = _answers_log(tmp_path)
+    log.append("not an entry")
+    (tmp_path / "model" / "answers.json").write_text(json.dumps(log))
+    payload = _call(satisfaction, tmp_path)
+    assert payload.get("refused") is not True, payload
+    warning = payload["deferred_warning"]
+    assert warning is not None
+
+
 def test_a_fast_answer_is_never_refused(tmp_path):
     """Data, not enforcement: the compound signature records; it does
     not gate."""

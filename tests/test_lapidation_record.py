@@ -169,6 +169,38 @@ def test_the_door_refuses_to_close_without_the_record(tmp_path):
     )
 
 
+def test_the_door_refuses_to_close_over_an_open_batch(tmp_path):
+    """The invocation door's quiet gate is ONE definition with the
+    session surface's (the review's half-true finding): a Probe Batch
+    still awaiting the user blocks the close — even when its pending
+    marker self-healed away, the Batch is the fact that stands."""
+    from socrates.invocations import assertion_tests, door, pending_question, resume
+
+    scenario_ids = _seed_scenarios(tmp_path)
+
+    _call(assertion_tests, tmp_path, {
+        "proposition_id": "p1",
+        "outcomes": [
+            {"scenario_id": sid, "survives": True} for sid in scenario_ids
+        ],
+    })
+    # The wedged state: an open Batch on record, its question gone.
+    (tmp_path / "model" / "batches.json").write_text(json.dumps(
+        {"batches": [{"id": "b1", "conflict_ids": ["c1"], "status": "open"}]}
+    ))
+    (tmp_path / "model" / "pending_question.json").write_text("")
+
+    _call(door, tmp_path, {"activity": "requirements"})
+    payload = _call(resume, tmp_path, {"canonical": "close", "raw": "fecha"})
+    assert payload.get("refused") is True, payload
+    assert "Batch still awaits" in payload["reason"], payload
+    assert payload["admissible_next"] == ["probe"], payload
+    standing = _call(pending_question, tmp_path)
+    assert standing["pending"]["kind"] == "door", (
+        "the close consumed the answer without closing"
+    )
+
+
 def test_the_door_proceeds_once_the_record_exists(tmp_path):
     from socrates.invocations import assertion_tests, door, resume
 

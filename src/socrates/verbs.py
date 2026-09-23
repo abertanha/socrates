@@ -46,7 +46,12 @@ from socrates.asking import (
     validate_token,
 )
 from socrates.deliverable import DeliverableComposer
-from socrates.conduction import TAIL, read_conduction_state
+from socrates.conduction import (
+    TAIL,
+    quiet_debt,
+    quiet_debt_reason,
+    read_conduction_state,
+)
 from socrates.inference import InferenceEngine
 from socrates.need import read_need, write_amendment
 from socrates.opening import OPENING_GREETING, OPENING_QUESTION, render_opening
@@ -141,6 +146,7 @@ def ask_opening(backend: BackendProtocol) -> dict[str, Any]:
         backend,
         {
             "kind": "opening",
+            "subject": "need",
             "greeting": OPENING_GREETING,
             "question": OPENING_QUESTION,
             "display": render_opening(),
@@ -400,17 +406,21 @@ def resume_door(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
     # Quiet is counting, on this surface too (socrates-seam ticket 02):
     # the middleware holds the same gate for the session surface, but the
     # invocation door close had NO quiet gate — a chapter could close
-    # over unlapidated ground. Lapidated means the full pass on record:
-    # Scenarios AND the assertion record.
+    # over unlapidated ground. One definition of the debt, one wording;
+    # only the admissible-next vocabulary is this surface's own.
     state = read_conduction_state(backend)
-    owed = [pid for pid, born in state.unlapidated if born == activity]
-    if state.label != TAIL and owed:
+    debt, owed = quiet_debt(state, activity)
+    if state.label != TAIL and debt == "lapidate":
         raise Refusal(
-            f"the chapter is not quiet: Proposition(s) "
-            f"{', '.join(owed)} born in '{activity}' have never been "
-            "through a pass — quiet is counting, so lapidate them "
-            "(Scenarios, then Assertion Tests) before closing",
+            quiet_debt_reason(debt, owed, activity),
             ["scenarios", "assertion_tests"],
+        )
+    if state.label != TAIL and debt == "batch":
+        # A Probe Batch still awaits the user (its pending marker may
+        # have self-healed away — the Batch is the fact that stands).
+        raise Refusal(
+            quiet_debt_reason(debt, owed, activity),
+            ["probe"],
         )
     try:
         # A chapter with no Propositions is vacuously quiet (D3): its
@@ -575,7 +585,10 @@ def resume_pending(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
             ["pending_question"],
         )
     canonical, raw = parse_envelope(answer)
-    if result.get("ok") is not False:
+    # A decline is an applied answer (the question was consumed, the
+    # signal took effect); only a FAILED apply — which keeps the question
+    # pending, the answer unconsumed — logs nothing.
+    if result.get("ok") is not False or result.get("declined") is True:
         entry = record_answered(
             backend,
             kind=kind,
