@@ -26,6 +26,7 @@ from socrates.paths import (
     SCENARIOS_PATH,
 )
 from socrates.asking import (
+    answer_log_unreadable,
     begin_pending,
     clear_pending,
     guard_pending,
@@ -829,6 +830,7 @@ class InferenceEngine:
         deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
         amendments = read_amendments(self._backend)
         self_answered = self._self_answered()
+        log_unreadable = answer_log_unreadable(self._backend)
         pipeline = PipelineStore(self._backend).snapshot()
         completed = pipeline.get("completed", ())
         active = pipeline.get("active")
@@ -844,6 +846,7 @@ class InferenceEngine:
             and not never_visited
             and not amendments
             and not self_answered
+            and not log_unreadable
         ):
             return None
         entries: list[dict[str, Any]] = []
@@ -883,6 +886,11 @@ class InferenceEngine:
                 "count": len(self_answered),
                 "answers": self_answered,
             }
+        if log_unreadable:
+            # The unreadable and the empty never look alike
+            # (answer-log-integrity): the condition rides present-or-
+            # absent, now and after any repair (the marker).
+            warning["answer_log_unreadable"] = True
         return warning
 
     def _self_answered(self) -> list[dict[str, Any]]:

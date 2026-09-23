@@ -288,6 +288,139 @@ def test_a_fast_answer_is_never_refused(tmp_path):
     assert payload.get("ok") is not False, payload
 
 
+# --- A corrupt log never lies quietly ---------------------------------------------
+
+
+def _corrupt(tmp_path: Path, payload: str = "{ this is not json") -> None:
+    (tmp_path / "model" / "answers.json").write_text(payload)
+
+
+def test_an_unreadable_log_names_itself_in_the_warning(tmp_path):
+    """The unreadable and the empty must never look alike: a log that
+    exists but does not parse is a condition the warning reports —
+    present only when it holds, never zero-filled prose. And the reader
+    reports, never repairs: the corrupt bytes stand untouched."""
+    from socrates.invocations import satisfaction
+
+    _seed_need(tmp_path)
+    payload = _call(satisfaction, tmp_path)
+    assert "answer_log_unreadable" not in payload["deferred_warning"], (
+        "a clean session carried the signal"
+    )
+    _corrupt(tmp_path)
+    payload = _call(satisfaction, tmp_path)
+    assert payload["deferred_warning"].get("answer_log_unreadable") is True, (
+        "an unreadable log read as an empty one"
+    )
+    assert (tmp_path / "model" / "answers.json").read_text() == (
+        "{ this is not json"
+    ), "the reader repaired what it should only have reported"
+
+
+def test_a_zero_byte_log_is_the_signature_of_a_lost_write(tmp_path):
+    """The backend truncates before it writes (O_TRUNC, no temp file):
+    a zero-byte log is what a dead write leaves behind — unreadable,
+    not empty."""
+    from socrates.invocations import satisfaction
+
+    _seed_need(tmp_path)
+    (tmp_path / "model" / "answers.json").write_text("")
+    payload = _call(satisfaction, tmp_path)
+    assert payload["deferred_warning"].get("answer_log_unreadable") is True
+
+
+def test_the_next_answer_preserves_the_corrupt_bytes(tmp_path):
+    """The writer preserves before it rewrites: the corrupt log moves
+    aside whole, and the fresh log opens with a marker that says so —
+    a session that lost a stretch of its record never gets to forget it."""
+    from socrates.invocations import accept, propose, resume, satisfaction
+
+    _seed_need(tmp_path)
+    _corrupt(tmp_path, "CORRUPT PAYLOAD")
+    _call(propose, tmp_path, {
+        "statement": "A Payment is the transfer of value.",
+        "activity": "requirements",
+    })
+    _call(accept, tmp_path, {"proposition_id": "p1"})
+    payload = _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
+    assert payload.get("ok") is not False, payload
+
+    sidecar = tmp_path / "model" / "answers.json.corrupt"
+    assert sidecar.read_text() == "CORRUPT PAYLOAD", (
+        "the evidence was overwritten"
+    )
+    log = _answers_log(tmp_path)
+    assert log[0]["kind"] == "answer_log_unreadable", (
+        "the fresh log forgot its own repair"
+    )
+    assert log[-1]["kind"] == "accept"
+    # The marker outlives the repair: the warning still names it.
+    payload = _call(satisfaction, tmp_path)
+    assert payload["deferred_warning"].get("answer_log_unreadable") is True
+
+
+def test_a_second_corruption_numbers_its_sidecar(tmp_path):
+    """One sidecar per corruption event: a second unreadable stretch
+    never overwrites the first."""
+    from socrates.invocations import door, resume
+
+    _seed_need(tmp_path)
+    _call(door, tmp_path, {"activity": "requirements"})
+    _corrupt(tmp_path, "FIRST")
+    _call(resume, tmp_path, {"canonical": "not_yet", "raw": "espera"})
+    _corrupt(tmp_path, "SECOND")
+    _call(door, tmp_path, {"activity": "requirements"})
+    _call(resume, tmp_path, {"canonical": "not_yet", "raw": "espera"})
+    model = tmp_path / "model"
+    assert (model / "answers.json.corrupt").read_text() == "FIRST"
+    assert (model / "answers.json.corrupt.1").read_text() == "SECOND"
+
+
+def test_a_failed_write_is_declared_never_fatal(tmp_path):
+    """The answer applied; the binding is data, never enforcement: a
+    write that cannot land fails the recording, not the resume — and
+    the failure rides the payload, never silence."""
+    import os
+
+    from socrates.invocations import accept, propose, resume
+
+    _seed_need(tmp_path)
+    _call(propose, tmp_path, {
+        "statement": "A Payment is the transfer of value.",
+        "activity": "requirements",
+    })
+    _call(accept, tmp_path, {"proposition_id": "p1"})
+    # The backend's O_TRUNC open fails deterministically on a directory.
+    os.remove(tmp_path / "model" / "answers.json")
+    (tmp_path / "model" / "answers.json").mkdir()
+    payload = _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
+    assert payload.get("ok") is not False, "the recording failed the resume"
+    assert payload.get("answer_recorded") is False, payload
+    assert payload.get("answer_record_error"), "the failure rode in silence"
+
+
+def test_the_writer_appends_to_what_the_file_holds(tmp_path):
+    """Lossless rewrite: a malformed element inside a parseable list
+    stays in the file — the skip happens where entries are weighed (the
+    warning's reader), never where they are written."""
+    from socrates.invocations import accept, propose, resume
+
+    _seed_need(tmp_path)
+    log = _answers_log(tmp_path)
+    log.append("not an entry")
+    (tmp_path / "model" / "answers.json").write_text(json.dumps(log))
+    _call(propose, tmp_path, {
+        "statement": "A Payment is the transfer of value.",
+        "activity": "requirements",
+    })
+    _call(accept, tmp_path, {"proposition_id": "p1"})
+    _call(resume, tmp_path, {"canonical": "confirm", "raw": "sim"})
+    assert "not an entry" in _answers_log(tmp_path), (
+        "the writer filtered what it rewrote"
+    )
+    assert _answers_log(tmp_path)[-1]["kind"] == "accept"
+
+
 # --- The resume result carries the moment ----------------------------------------
 
 

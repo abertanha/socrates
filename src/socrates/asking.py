@@ -265,22 +265,107 @@ def record_answered(
         "canonical": canonical if isinstance(canonical, str) else None,
         "raw": raw if isinstance(raw, str) else None,
     }
-    log = read_answer_log(backend)
+    parsed, unreadable = _read_log(backend)
+    if unreadable:
+        # Preserve before rewriting (answer-log-integrity): the corrupt
+        # bytes move aside whole, and the fresh log opens with the
+        # marker that keeps the condition visible after the file parses
+        # again — a session that lost a stretch of its record never
+        # gets to forget it.
+        _preserve_corrupt_log(backend)
+        log: list[Any] = [_marker_entry(entry["answered_at"])]
+    else:
+        # Lossless: the writer appends to what the file actually holds
+        # and never filters — skipping unjudgeable entries is the
+        # reader-of-record's business, never the writer's.
+        log = parsed
     log.append(entry)
-    backend.write(ANSWERS_PATH, json.dumps(log, indent=2))
+    write = backend.write(ANSWERS_PATH, json.dumps(log, indent=2))
+    if write.error:
+        # The answer applied; its binding is not on record — declared on
+        # the entry, never silent, never fatal (the log is data, never
+        # enforcement).
+        entry["recorded"] = False
+        entry["record_error"] = write.error
     return entry
 
 
-def read_answer_log(backend: BackendProtocol) -> list[dict[str, Any]]:
-    """The recorded answer events, oldest first; unreadable is empty."""
+def _read_log(backend: BackendProtocol) -> tuple[list[Any] | None, bool]:
+    """The raw parsed log and whether it is unreadable — ONE definition
+    for every reader and the writer (answer-log-integrity). Unreadable
+    means the file exists and does not parse as a JSON list, a zero-byte
+    file included (that is the O_TRUNC-without-write signature). Absent
+    is clean emptiness — a fresh session, no condition."""
     result = backend.read(ANSWERS_PATH)
     if result.error or result.file_data is None:
-        return []
+        return [], False
     try:
-        log = json.loads(result.file_data["content"])
+        parsed = json.loads(result.file_data["content"])
     except json.JSONDecodeError:
-        return []
-    return log if isinstance(log, list) else []
+        return None, True
+    if not isinstance(parsed, list):
+        return None, True
+    return parsed, False
+
+
+def read_answer_log(backend: BackendProtocol) -> list[Any]:
+    """The recorded answer events, oldest first, exactly as the file
+    holds them; unreadable is empty. What goes back out is what came in
+    — filtering happens where entries are weighed, never here."""
+    parsed, unreadable = _read_log(backend)
+    return [] if unreadable else parsed
+
+
+# The marker that outlives the repair: when a corrupt log is preserved
+# aside, the fresh log opens with this entry, so the condition stays
+# visible after the file parses again. Same shape as a decision's entry,
+# but it is not a decision — kind and the moment, nothing else.
+ANSWER_LOG_MARKER_KIND = "answer_log_unreadable"
+
+
+def _marker_entry(moment: str) -> dict[str, Any]:
+    return {
+        "kind": ANSWER_LOG_MARKER_KIND,
+        "subject": None,
+        "asked_at": None,
+        "answered_at": moment,
+        "canonical": None,
+        "raw": None,
+    }
+
+
+def answer_log_unreadable(backend: BackendProtocol) -> bool:
+    """Whether the answer log could not be read — now, or at any
+    repaired point in the session (the marker outlives the repair).
+    One definition, both states, the condition's single home."""
+    parsed, unreadable = _read_log(backend)
+    if unreadable:
+        return True
+    return any(
+        isinstance(entry, dict)
+        and entry.get("kind") == ANSWER_LOG_MARKER_KIND
+        for entry in parsed
+    )
+
+
+def _preserve_corrupt_log(backend: BackendProtocol) -> None:
+    """The corrupt bytes move aside whole before anything rewrites the
+    log — the evidence survives whatever corrupted it. First come keeps
+    the plain sidecar name; a second corruption numbers on."""
+    result = backend.read(ANSWERS_PATH)
+    content = result.file_data["content"] if result.file_data else ""
+    sidecar = ANSWERS_PATH + ".corrupt"
+    n = 0
+    while _file_exists(backend, sidecar):
+        n += 1
+        sidecar = f"{ANSWERS_PATH}.corrupt.{n}"
+    backend.write(sidecar, content)
+    backend.delete(ANSWERS_PATH)
+
+
+def _file_exists(backend: BackendProtocol, path: str) -> bool:
+    result = backend.read(path)
+    return not result.error and result.file_data is not None
 
 
 def parse_envelope(answer: Any) -> tuple[Any, Any]:

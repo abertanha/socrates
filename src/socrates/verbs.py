@@ -598,6 +598,13 @@ def resume_pending(backend: BackendProtocol, answer: Any) -> dict[str, Any]:
             raw=raw,
         )
         result["answered_at"] = entry["answered_at"]
+        if entry.get("recorded") is False:
+            # The answer applied; its binding is not on record — the
+            # recording failure rides the payload, never silence, and
+            # never fails the resume (answer-log-integrity: the log is
+            # data, never enforcement).
+            result["answer_recorded"] = False
+            result["answer_record_error"] = entry["record_error"]
     # The engine's apply results state their success as data; the Probe's
     # and Iteration's ride bare — the resume door normalizes them.
     result.setdefault("ok", True)
