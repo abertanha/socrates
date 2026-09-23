@@ -151,8 +151,8 @@ def quiet_debt_reason(
     if debt == "lapidate":
         return (
             f"the chapter is not quiet: Proposition(s) "
-            f"{', '.join(owed)} born in '{activity}' have never been "
-            "through a pass — quiet is counting, so lapidate them "
+            f"{', '.join(owed)} born in '{activity}' have no pass on "
+            "record — quiet is counting, so lapidate them "
             "(Scenarios, then Assertion Tests) before the chapter closes"
         )
     return (
@@ -170,7 +170,7 @@ class ConductionState:
     active: ModelingActivity | None
     completed: tuple[ModelingActivity, ...]
     # Ticket 17 — in-chapter facts, likewise derived at read time:
-    # live Propositions that have never been through a pass, as
+    # live Propositions with no pass on record, as
     # (id, activity) pairs, and whether a Probe Batch awaits the user.
     unlapidated: tuple[tuple[str, ModelingActivity], ...] = ()
     pending_batch: bool = False
@@ -456,8 +456,8 @@ def _check_propose(
             args,
             admissible_next=list(_LAPIDATION_NEXT),
             reason=(
-                f"treadmill: Proposition(s) {owed} have never been through "
-                "a pass — lapidate them (Scenarios, then Assertion Tests) "
+                f"treadmill: Proposition(s) {owed} have no pass on "
+                "record — lapidate them (Scenarios, then Assertion Tests) "
                 "before proposing the next one; only ground born from Probe "
                 "resolution enters without waiting"
             ),

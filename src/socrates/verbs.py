@@ -116,8 +116,8 @@ def _gate_propose(backend: BackendProtocol) -> None:
     if state.label != TAIL and state.unlapidated:
         owed = ", ".join(pid for pid, _ in state.unlapidated)
         raise Refusal(
-            f"treadmill: Proposition(s) {owed} have never been through "
-            "a pass — lapidate them (Scenarios, then Assertion Tests) "
+            f"treadmill: Proposition(s) {owed} have no pass on "
+            "record — lapidate them (Scenarios, then Assertion Tests) "
             "before proposing the next one; only ground born from Probe "
             "resolution enters without waiting",
             ["scenarios", "assertion_tests"],

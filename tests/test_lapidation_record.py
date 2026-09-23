@@ -122,6 +122,85 @@ def test_a_malformed_outcome_records_nothing(tmp_path):
     )
 
 
+# --- The boundary is honest about what it counts -----------------------------------
+
+
+def test_the_boundary_break_is_accepted_and_named_honestly(tmp_path):
+    """Old-ruling ground crossing the upgrade boundary owes its
+    lapidation — ruled ACCEPTED (2026-09-23): the debt is real because
+    the record is really absent, and backfilling would fabricate
+    evidence. Pinned both halves: the gates refuse the old-shape state,
+    and the wording claims the record, never the run."""
+    from socrates.invocations import (
+        assertion_tests,
+        door,
+        pending_question,
+        propose,
+        resume,
+    )
+
+    scenario_ids = _seed_scenarios(tmp_path)
+
+    # The door half: the close refuses over the record that is really
+    # absent, in words the engine can stand behind.
+    _call(door, tmp_path, {"activity": "requirements"})
+    payload = _call(resume, tmp_path, {"canonical": "close", "raw": "fecha"})
+    assert payload.get("refused") is True, payload
+    assert "no pass on record" in payload["reason"], payload
+    assert "never been through a pass" not in payload["reason"]
+    assert "p1" in payload["reason"]
+    assert payload["admissible_next"] == ["scenarios", "assertion_tests"]
+    standing = _call(pending_question, tmp_path)
+    assert standing["pending"]["kind"] == "door", (
+        "the close consumed the answer without closing"
+    )
+
+    # The treadmill half: the same old-shape debt blocks the next
+    # propose, in the same words.
+    statement = "An Order is a customer's request to buy."
+    payload = _call(propose, tmp_path, {
+        "statement": statement,
+        "activity": "requirements",
+    })
+    assert payload.get("refused") is True, payload
+    assert "no pass on record" in payload["reason"], payload
+
+    # The repair is ordinary: one assertion outcome set lands and both
+    # gates proceed.
+    _call(assertion_tests, tmp_path, {
+        "proposition_id": "p1",
+        "outcomes": [
+            {"scenario_id": sid, "survives": True} for sid in scenario_ids
+        ],
+    })
+    payload = _call(resume, tmp_path, {"canonical": "close", "raw": "fecha"})
+    assert payload.get("refused") is not True, payload
+    payload = _call(propose, tmp_path, {
+        "statement": statement,
+        "activity": "requirements",
+    })
+    assert payload.get("refused") is not True, payload
+
+
+def test_the_wording_claims_the_record_never_the_run():
+    """The engine counts records; it has no knowledge of runs. Every
+    refusal wording contracts to what it counts, and the unclaimable
+    phrase is made nowhere in the source — the scan flattens wrapped
+    lines first (two of the sites carry the phrase across a break)."""
+    src = Path(__file__).resolve().parent.parent / "src"
+    raw = "\n".join(path.read_text() for path in sorted(src.rglob("*.py")))
+    # Whitespace flattens; the house's wrapped wordings re-join too —
+    # adjacent string-literal fragments ("..." newline "...") read as
+    # one phrase, or the scan misses exactly the breaks it exists for.
+    flat = " ".join(raw.split()).replace('" "', "")
+    assert "never been through a pass" not in flat, (
+        "the engine claimed a run it cannot know"
+    )
+    assert flat.count("no pass on record") >= 3, (
+        "the three refusal wordings did not all contract"
+    )
+
+
 # --- One definition, every surface -------------------------------------------------
 
 
