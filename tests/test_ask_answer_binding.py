@@ -607,6 +607,39 @@ def test_a_failed_fresh_write_leaves_the_evidence_standing(tmp_path):
     )
 
 
+def test_an_unreadable_sidecar_still_takes_its_name(tmp_path):
+    """A sidecar the reader cannot decode is still evidence on disk:
+    the numbering steps over it and the older bytes stand. Only the
+    not-found shape means free — a taken path mistaken for a free one
+    is the verification review's clobber (an undecodable sidecar read
+    as absent and was overwritten, silently)."""
+    from deepagents.backends.filesystem import FilesystemBackend
+
+    from socrates.asking import record_answered
+
+    (tmp_path / "model").mkdir()
+    (tmp_path / "model" / "answers.json").write_text("CORRUPT PAYLOAD")
+    older = tmp_path / "model" / "answers.json.corrupt"
+    older.write_bytes(b"\xff\xfe older evidence")
+    backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=True)
+
+    entry = record_answered(
+        backend,
+        kind="door",
+        subject=None,
+        asked_at=None,
+        canonical="not_yet",
+        raw="espera",
+    )
+    assert entry.get("recorded") is not False, entry
+    assert older.read_bytes() == b"\xff\xfe older evidence", (
+        "older evidence was overwritten"
+    )
+    assert (tmp_path / "model" / "answers.json.corrupt.1").read_text() == (
+        "CORRUPT PAYLOAD"
+    )
+
+
 def test_satisfaction_reads_the_log_once(tmp_path):
     """One look weighs everything: the fast-answer signal and the
     unreadable condition come from the same read — the warning never

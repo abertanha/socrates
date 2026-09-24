@@ -290,9 +290,11 @@ def record_answered(
         log = read.entries
     log.append(entry)
     # The rewrite replaces in place (the backend truncates on open):
-    # nothing destructive runs first, so a failed write leaves the
-    # previous bytes — corrupt or healthy — standing behind the
-    # declaration, never a vanished file that reads as clean emptiness.
+    # nothing destructive runs first, so a failed write — at open —
+    # leaves the previous bytes standing behind the declaration, never
+    # a vanished file that reads as clean emptiness. A fault mid-write
+    # still truncates: the backend has no rename, so the loss degrades
+    # to the corrupt path — preserved and declared, never silent.
     write = backend.write(ANSWERS_PATH, json.dumps(log, indent=2))
     if write.error:
         # The answer applied; its binding is not on record — declared on
@@ -451,8 +453,12 @@ def _preserve_corrupt_log(
 
 
 def _file_exists(backend: BackendProtocol, path: str) -> bool:
+    """Whether the path is taken — a standing file, even one the reader
+    cannot decode. Only the not-found shape means free: an undecodable
+    sidecar is evidence on disk, and the numbering steps over it, never
+    overwrites it."""
     _content, error = _read_whole(backend, path)
-    return error is None
+    return error is None or error != _not_found_error(path)
 
 
 def parse_envelope(answer: Any) -> tuple[Any, Any]:

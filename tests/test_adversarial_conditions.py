@@ -19,6 +19,10 @@ from pathlib import Path
 
 NEED = "A checkout flow for a small store."
 
+# Past the fixture's 4-line page: corruption the pagination can bite,
+# so these tests fail against a reader that trusts one window.
+_CORRUPT = "\n".join(f"corrupt line {i}" for i in range(10))
+
 
 def _entries(count: int) -> list[dict]:
     moment = datetime.now(timezone.utc)
@@ -66,7 +70,7 @@ def test_a_corrupt_log_is_preserved_whole_under_paging(
     from socrates.verbs import ask_door, resume_pending
 
     (tmp_path / "model").mkdir()
-    (tmp_path / "model" / "answers.json").write_text("CORRUPT PAYLOAD")
+    (tmp_path / "model" / "answers.json").write_text(_CORRUPT)
     ask_door(tiny_log_pages, "requirements")
 
     payload = resume_pending(
@@ -76,7 +80,7 @@ def test_a_corrupt_log_is_preserved_whole_under_paging(
     assert payload.get("answer_recorded") is not False, payload
 
     sidecar = tmp_path / "model" / "answers.json.corrupt"
-    assert sidecar.read_text() == "CORRUPT PAYLOAD", (
+    assert sidecar.read_text() == _CORRUPT, (
         "a window slice passed for the evidence"
     )
     log = json.loads((tmp_path / "model" / "answers.json").read_text())
