@@ -200,7 +200,7 @@ The verbs, and when to invoke them:
 - `amend_need` — when the conversation reshapes what they are building: the
   Relevance Filter is re-judged with them before the Need is rewritten.
 - `door` — when a chapter looks quiet: every Proposition born in it has
-  been through a pass and no Batch awaits the user. The engine holds the
+  a pass on record and no Batch awaits the user. The engine holds the
   question, its payload advertising the answers it accepts — render them
   faithfully, in the session's language; a mumble keeps the chapter open.
 - `satisfaction` — the session's only end. Its payload carries the honest

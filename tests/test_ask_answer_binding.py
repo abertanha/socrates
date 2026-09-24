@@ -421,6 +421,222 @@ def test_the_writer_appends_to_what_the_file_holds(tmp_path):
     assert _answers_log(tmp_path)[-1]["kind"] == "accept"
 
 
+# --- The reads see the whole file, the writes never destroy ----------------------
+
+
+def _entries(count: int) -> list[dict]:
+    """Valid log entries in the documented shape, a minute apart."""
+    moment = datetime.now(timezone.utc)
+    return [
+        {
+            "kind": "opening",
+            "subject": None,
+            "asked_at": (moment + timedelta(minutes=i)).isoformat(),
+            "answered_at": (moment + timedelta(minutes=i, seconds=90)).isoformat(),
+            "canonical": NEED,
+            "raw": "checkout",
+        }
+        for i in range(count)
+    ]
+
+
+def test_a_healthy_log_beyond_the_page_limit_survives_intact(tmp_path):
+    """The backend paginates reads — 2000 lines by default, the window
+    carrying no mark of its own truncation — so a reader that trusts one
+    read sees a broken half-log and the writer, reading corruption,
+    preserved the truncation and threw the tail away. The reader walks
+    the pagination instead: a log the page limit outgrew appends whole
+    (the review's empirically reproduced destruction)."""
+    from socrates.invocations import door, resume
+
+    _seed_need(tmp_path)
+    surviving = _entries(400)
+    (tmp_path / "model" / "answers.json").write_text(
+        json.dumps(surviving, indent=2)
+    )
+    content = (tmp_path / "model" / "answers.json").read_text()
+    assert content.count("\n") > 2000, "the crafted log never crossed the page"
+
+    _call(door, tmp_path, {"activity": "requirements"})
+    payload = _call(resume, tmp_path, {"canonical": "not_yet", "raw": "espera"})
+    assert payload.get("ok") is not False, payload
+
+    log = _answers_log(tmp_path)
+    assert len(log) == 401, "the log lost its tail to the page limit"
+    assert log[0] == surviving[0] and log[399] == surviving[399], (
+        "a preserved truncation replaced the real history"
+    )
+    assert log[-1]["kind"] == "door"
+    assert not (tmp_path / "model" / "answers.json.corrupt").exists(), (
+        "a healthy log was preserved aside as corruption"
+    )
+
+
+def test_a_failing_preserve_never_touches_the_log(tmp_path):
+    """Preserve is a precondition, never a ceremony: the sidecar write's
+    result is checked, and a preserve that cannot land leaves the log
+    exactly as it stands — the answer is declared unrecorded instead of
+    an unchecked delete destroying the only copy (the review's second
+    reproduced destruction)."""
+    from socrates.invocations import door, resume
+
+    _seed_need(tmp_path)
+    _call(door, tmp_path, {"activity": "requirements"})
+    _corrupt(tmp_path, "CORRUPT PAYLOAD")
+    (tmp_path / "model" / "answers.json.corrupt").mkdir()
+
+    payload = _call(resume, tmp_path, {"canonical": "not_yet", "raw": "espera"})
+    assert payload.get("refused") is not True, payload
+    assert payload.get("answer_recorded") is False, payload
+    assert payload.get("answer_record_error"), "the failed preserve rode in silence"
+    assert (tmp_path / "model" / "answers.json").read_text() == "CORRUPT PAYLOAD", (
+        "the only copy was deleted on an unchecked sidecar write"
+    )
+
+
+def test_a_read_error_is_never_an_empty_log(tmp_path):
+    """The not-found and the unreadable are different facts: bytes the
+    reader cannot decode (a legacy non-UTF-8 stretch) mean the log
+    STANDS — the writer declares and leaves the evidence, it never
+    starts a fresh log over it (the review's third reproduced
+    destruction: an error read as absence is a silent reset)."""
+    from socrates.invocations import door, resume
+
+    _seed_need(tmp_path)
+    _call(door, tmp_path, {"activity": "requirements"})
+    (tmp_path / "model" / "answers.json").write_bytes(b"\xff\xfe\x00not utf-8")
+
+    payload = _call(resume, tmp_path, {"canonical": "not_yet", "raw": "espera"})
+    assert payload.get("refused") is not True, payload
+    assert payload.get("answer_recorded") is False, payload
+    assert payload.get("answer_record_error"), "the undeclarable read rode in silence"
+    assert (tmp_path / "model" / "answers.json").read_bytes() == (
+        b"\xff\xfe\x00not utf-8"
+    ), "an unreadable log was silently reset to a fresh one"
+
+
+def test_the_preserve_uses_the_bytes_the_reader_saw(tmp_path):
+    """One sight is the whole truth: the preserved evidence is the
+    content the reader saw, not a second look at a file the session
+    could have changed in between (the review's TOCTOU)."""
+    from deepagents.backends.filesystem import FilesystemBackend
+
+    from socrates.asking import record_answered
+
+    class _Tampering(FilesystemBackend):
+        """Rewrites the log after its first read, mid-ceremony."""
+
+        def __init__(self, root_dir, log_path, **kwargs):
+            super().__init__(root_dir=root_dir, **kwargs)
+            self._log_path = log_path
+            self._struck = False
+
+        def read(self, file_path, offset=0, limit=2000):
+            result = super().read(file_path, offset=offset, limit=limit)
+            if file_path == "/model/answers.json" and not self._struck:
+                self._struck = True
+                self._log_path.write_text("TAMPERED AFTER THE FIRST SIGHT")
+            return result
+
+    log_path = tmp_path / "model" / "answers.json"
+    (tmp_path / "model").mkdir()
+    log_path.write_text("CORRUPT PAYLOAD")
+    backend = _Tampering(tmp_path, log_path, virtual_mode=True)
+
+    entry = record_answered(
+        backend,
+        kind="door",
+        subject=None,
+        asked_at=None,
+        canonical="not_yet",
+        raw="espera",
+    )
+    assert entry.get("recorded") is not False, entry
+    sidecar = tmp_path / "model" / "answers.json.corrupt"
+    assert sidecar.read_text() == "CORRUPT PAYLOAD", (
+        "the evidence was re-read instead of using what the reader saw"
+    )
+    log = json.loads(log_path.read_text())
+    assert log[0]["kind"] == "answer_log_unreadable"
+    assert log[-1]["kind"] == "door", "the fresh log never landed"
+
+
+def test_a_failed_fresh_write_leaves_the_evidence_standing(tmp_path):
+    """Nothing destructive runs before the new content is on disk: the
+    old delete-before-rewrite turned a failed fresh write into a
+    vanished log — the marker and all. The rewrite replaces in place
+    (the backend truncates on open), so a failed write leaves the
+    previous bytes standing and the loss declared."""
+    from deepagents.backends.filesystem import FilesystemBackend
+    from deepagents.backends.protocol import WriteResult
+
+    from socrates.asking import record_answered
+
+    class _LosingWrite(FilesystemBackend):
+        """The fresh log's write fails once, mid-ceremony."""
+
+        def __init__(self, root_dir, **kwargs):
+            super().__init__(root_dir=root_dir, **kwargs)
+            self._failed = False
+
+        def write(self, file_path, content):
+            if file_path == "/model/answers.json" and not self._failed:
+                self._failed = True
+                return WriteResult(error="simulated loss of the fresh write")
+            return super().write(file_path, content)
+
+    (tmp_path / "model").mkdir()
+    (tmp_path / "model" / "answers.json").write_text("CORRUPT PAYLOAD")
+    backend = _LosingWrite(tmp_path, virtual_mode=True)
+
+    entry = record_answered(
+        backend,
+        kind="door",
+        subject=None,
+        asked_at=None,
+        canonical="not_yet",
+        raw="espera",
+    )
+    assert entry.get("recorded") is False, entry
+    assert entry.get("record_error"), "the lost write rode in silence"
+    assert (tmp_path / "model" / "answers.json").read_text() == "CORRUPT PAYLOAD", (
+        "the delete ran before the rewrite was safe"
+    )
+    assert (tmp_path / "model" / "answers.json.corrupt").read_text() == (
+        "CORRUPT PAYLOAD"
+    )
+
+
+def test_satisfaction_reads_the_log_once(tmp_path):
+    """One look weighs everything: the fast-answer signal and the
+    unreadable condition come from the same read — the warning never
+    walks the log twice (a second walk is a second chance to disagree
+    with the first)."""
+    from deepagents.backends.filesystem import FilesystemBackend
+
+    from socrates.inference import InferenceEngine
+
+    class _Counting(FilesystemBackend):
+        """Remembers how often the answer log was read."""
+
+        def __init__(self, root_dir, **kwargs):
+            super().__init__(root_dir=root_dir, **kwargs)
+            self.log_reads = 0
+
+        def read(self, file_path, offset=0, limit=2000):
+            if file_path == "/model/answers.json":
+                self.log_reads += 1
+            return super().read(file_path, offset=offset, limit=limit)
+
+    _seed_need(tmp_path)
+    backend = _Counting(tmp_path, virtual_mode=True)
+    warning = InferenceEngine(backend).satisfaction_warning()
+    assert warning is not None, "the recorded opening carried no warning"
+    assert backend.log_reads == 1, (
+        f"the log was walked {backend.log_reads} times for one weighing"
+    )
+
+
 # --- The resume result carries the moment ----------------------------------------
 
 

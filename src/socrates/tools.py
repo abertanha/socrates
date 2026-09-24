@@ -703,8 +703,8 @@ def build_activity_tools(
             name="complete_modeling_activity",
             description=(
                 f"Declare the {activity} Modeling Activity complete when the "
-                "chapter is quiet — every Proposition born in it has been "
-                "through a pass (Scenarios / Assertion Tests) and no Batch "
+                "chapter is quiet — every Proposition born in it has a pass "
+                "on record (Scenarios / Assertion Tests) and no Batch "
                 "awaits the user. The declaration opens the door: the user "
                 "answers close, not yet, or Satisfaction."
             ),

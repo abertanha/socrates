@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from deepagents.backends.protocol import BackendProtocol
 
@@ -265,21 +265,34 @@ def record_answered(
         "canonical": canonical if isinstance(canonical, str) else None,
         "raw": raw if isinstance(raw, str) else None,
     }
-    parsed, unreadable = _read_log(backend)
-    if unreadable:
+    read = read_log(backend)
+    if read.unreadable_now:
         # Preserve before rewriting (answer-log-integrity): the corrupt
         # bytes move aside whole, and the fresh log opens with the
         # marker that keeps the condition visible after the file parses
         # again — a session that lost a stretch of its record never
-        # gets to forget it.
-        _preserve_corrupt_log(backend)
+        # gets to forget it. A preserve that cannot land stops the
+        # rewrite: the evidence is never destroyed on a ceremony's
+        # unchecked step, and the answer is declared unrecorded instead.
+        preserve_error = _preserve_corrupt_log(backend, read)
+        if preserve_error is not None:
+            entry["recorded"] = False
+            entry["record_error"] = preserve_error
+            return entry
         log: list[Any] = [_marker_entry(entry["answered_at"])]
+    elif read.absent:
+        # Absent is clean emptiness — a fresh session opens the log.
+        log = []
     else:
         # Lossless: the writer appends to what the file actually holds
         # and never filters — skipping unjudgeable entries is the
         # reader-of-record's business, never the writer's.
-        log = parsed
+        log = read.entries
     log.append(entry)
+    # The rewrite replaces in place (the backend truncates on open):
+    # nothing destructive runs first, so a failed write leaves the
+    # previous bytes — corrupt or healthy — standing behind the
+    # declaration, never a vanished file that reads as clean emptiness.
     write = backend.write(ANSWERS_PATH, json.dumps(log, indent=2))
     if write.error:
         # The answer applied; its binding is not on record — declared on
@@ -290,30 +303,96 @@ def record_answered(
     return entry
 
 
-def _read_log(backend: BackendProtocol) -> tuple[list[Any] | None, bool]:
-    """The raw parsed log and whether it is unreadable — ONE definition
-    for every reader and the writer (answer-log-integrity). Unreadable
-    means the file exists and does not parse as a JSON list, a zero-byte
-    file included (that is the O_TRUNC-without-write signature). Absent
-    is clean emptiness — a fresh session, no condition."""
-    result = backend.read(ANSWERS_PATH)
-    if result.error or result.file_data is None:
-        return [], False
+class AnswerLogRead(NamedTuple):
+    """One whole-file look at the answer log.
+
+    ``absent`` is clean emptiness — no file, a fresh session, no
+    condition. Unreadable-now means the file stands and is not a
+    readable JSON list. ``content`` is the bytes-as-text the reader
+    saw (``None`` when nothing was read) — the preserve ceremony's
+    evidence is always THIS content, never a second look at a live
+    file.
+    """
+
+    absent: bool
+    entries: list[Any] | None
+    content: str | None
+    read_error: str | None
+
+    @property
+    def unreadable_now(self) -> bool:
+        return not self.absent and self.entries is None
+
+    @property
+    def unreadable(self) -> bool:
+        """Unreadable now, or at any repaired point of the session —
+        the marker outlives the repair."""
+        if self.unreadable_now:
+            return True
+        return any(
+            isinstance(entry, dict)
+            and entry.get("kind") == ANSWER_LOG_MARKER_KIND
+            for entry in self.entries or ()
+        )
+
+
+def read_log(backend: BackendProtocol) -> AnswerLogRead:
+    """One whole-file look at the answer log — the single read every
+    consumer weighs (the writer, the Satisfaction signal, the
+    condition's predicate).
+
+    The backend paginates reads — 2000 lines by default, the window
+    carrying no mark of its own truncation — so a log that outgrew the
+    page reads back broken, and a truncation is indistinguishable from
+    corruption. The read walks ``next_offset`` to the end instead: what
+    every consumer sees is the whole file, whatever its size.
+
+    Unreadable means the file stands and does not parse as a JSON list
+    — a zero-byte file included (that is the O_TRUNC-without-write
+    signature), and a read that failed on bytes that exist (the
+    not-found shape is the only absence; every other error is a log
+    standing unread, never an empty one)."""
+    content, error = _read_whole(backend, ANSWERS_PATH)
+    if error is not None:
+        if error == _not_found_error(ANSWERS_PATH):
+            return AnswerLogRead(absent=True, entries=None, content=None, read_error=None)
+        return AnswerLogRead(absent=False, entries=None, content=None, read_error=error)
     try:
-        parsed = json.loads(result.file_data["content"])
+        parsed = json.loads(content)
     except json.JSONDecodeError:
-        return None, True
+        return AnswerLogRead(absent=False, entries=None, content=content, read_error=None)
     if not isinstance(parsed, list):
-        return None, True
-    return parsed, False
+        return AnswerLogRead(absent=False, entries=None, content=content, read_error=None)
+    return AnswerLogRead(absent=False, entries=parsed, content=content, read_error=None)
 
 
-def read_answer_log(backend: BackendProtocol) -> list[Any]:
-    """The recorded answer events, oldest first, exactly as the file
-    holds them; unreadable is empty. What goes back out is what came in
-    — filtering happens where entries are weighed, never here."""
-    parsed, unreadable = _read_log(backend)
-    return [] if unreadable else parsed
+def _read_whole(backend: BackendProtocol, path: str) -> tuple[str | None, str | None]:
+    """The file's whole content and the read's error, walking the
+    backend's pagination to the end. Content is ``None`` exactly when
+    the read failed — including a failure past the first window, where
+    a half-read is itself the corruption signature and is never
+    presented as content."""
+    chunks: list[str] = []
+    offset = 0
+    while True:
+        result = backend.read(path, offset=offset)
+        if result.error or result.file_data is None:
+            return None, result.error or "unreadable read result"
+        chunks.append(result.file_data["content"])
+        if result.next_offset is None:
+            return "".join(chunks), None
+        offset = result.next_offset
+
+
+def _not_found_error(path: str) -> str:
+    """The backend's exact not-found wording (``FilesystemBackend.read``).
+
+    The absence classification couples to it deliberately: a wording
+    drift flips toward the safe side — the file is treated as standing
+    and unreadable, the evidence preserved, the loss declared — never
+    the destructive side, where an error read as absence silently
+    resets the log over bytes that were there."""
+    return f"File '{path}' not found"
 
 
 # The marker that outlives the repair: when a corrupt log is preserved
@@ -338,34 +417,42 @@ def answer_log_unreadable(backend: BackendProtocol) -> bool:
     """Whether the answer log could not be read — now, or at any
     repaired point in the session (the marker outlives the repair).
     One definition, both states, the condition's single home."""
-    parsed, unreadable = _read_log(backend)
-    if unreadable:
-        return True
-    return any(
-        isinstance(entry, dict)
-        and entry.get("kind") == ANSWER_LOG_MARKER_KIND
-        for entry in parsed
-    )
+    return read_log(backend).unreadable
 
 
-def _preserve_corrupt_log(backend: BackendProtocol) -> None:
+def _preserve_corrupt_log(
+    backend: BackendProtocol, read: AnswerLogRead
+) -> str | None:
     """The corrupt bytes move aside whole before anything rewrites the
     log — the evidence survives whatever corrupted it. First come keeps
-    the plain sidecar name; a second corruption numbers on."""
-    result = backend.read(ANSWERS_PATH)
-    content = result.file_data["content"] if result.file_data else ""
+    the plain sidecar name; a second corruption numbers on.
+
+    The bytes preserved are the ones the reader saw — never a second
+    look at a live file. Returns ``None`` when the evidence is aside
+    and the rewrite may proceed; the failure reason otherwise. The
+    rewrite never runs on a preserve that did not land, so the standing
+    bytes — the only copy — are never destroyed on an unchecked step.
+    A log whose bytes could not be read at all has nothing to move:
+    the reason says so and the file stands untouched."""
+    if read.content is None:
+        return (
+            "answer log stands but its bytes could not be read "
+            f"({read.read_error}) — left untouched, nothing rewritten"
+        )
     sidecar = ANSWERS_PATH + ".corrupt"
     n = 0
     while _file_exists(backend, sidecar):
         n += 1
         sidecar = f"{ANSWERS_PATH}.corrupt.{n}"
-    backend.write(sidecar, content)
-    backend.delete(ANSWERS_PATH)
+    write = backend.write(sidecar, read.content)
+    if write.error:
+        return f"corrupt log not preserved ({write.error}) — left untouched"
+    return None
 
 
 def _file_exists(backend: BackendProtocol, path: str) -> bool:
-    result = backend.read(path)
-    return not result.error and result.file_data is not None
+    _content, error = _read_whole(backend, path)
+    return error is None
 
 
 def parse_envelope(answer: Any) -> tuple[Any, Any]:

@@ -26,12 +26,12 @@ from socrates.paths import (
     SCENARIOS_PATH,
 )
 from socrates.asking import (
-    answer_log_unreadable,
+    AnswerLogRead,
     begin_pending,
     clear_pending,
     guard_pending,
     parse_envelope,
-    read_answer_log,
+    read_log,
     require_pending,
     token_refusal,
 )
@@ -829,8 +829,13 @@ class InferenceEngine:
         """
         deferred = [c for c in self._load_conflicts() if c.status == "deferred"]
         amendments = read_amendments(self._backend)
-        self_answered = self._self_answered()
-        log_unreadable = answer_log_unreadable(self._backend)
+        # One look weighs everything: the fast-answer signal and the
+        # unreadable condition come from the same whole-file read — a
+        # second walk of the log is a second chance to disagree with
+        # the first.
+        log_read = read_log(self._backend)
+        self_answered = self._self_answered(log_read)
+        log_unreadable = log_read.unreadable
         pipeline = PipelineStore(self._backend).snapshot()
         completed = pipeline.get("completed", ())
         active = pipeline.get("active")
@@ -893,7 +898,7 @@ class InferenceEngine:
             warning["answer_log_unreadable"] = True
         return warning
 
-    def _self_answered(self) -> list[dict[str, Any]]:
+    def _self_answered(self, log_read: AnswerLogRead) -> list[dict[str, Any]]:
         """The recorded answers that arrived faster than a human can read
         their question — the ask–answer binding weighed at the end.
 
@@ -903,7 +908,7 @@ class InferenceEngine:
         gate (socrates-seam ticket 01).
         """
         fast: list[dict[str, Any]] = []
-        for entry in read_answer_log(self._backend):
+        for entry in log_read.entries or ():
             if not isinstance(entry, dict):
                 continue
             asked = _parse_iso(entry.get("asked_at"))

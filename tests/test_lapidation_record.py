@@ -185,19 +185,33 @@ def test_the_boundary_break_is_accepted_and_named_honestly(tmp_path):
 def test_the_wording_claims_the_record_never_the_run():
     """The engine counts records; it has no knowledge of runs. Every
     refusal wording contracts to what it counts, and the unclaimable
-    phrase is made nowhere in the source — the scan flattens wrapped
-    lines first (two of the sites carry the phrase across a break)."""
+    phrase is made nowhere in the source — in either polarity (the
+    affirmative "been through a pass" evaded the first scan). The scan
+    flattens wrapped lines first (several sites carry the phrase across
+    a break)."""
     src = Path(__file__).resolve().parent.parent / "src"
     raw = "\n".join(path.read_text() for path in sorted(src.rglob("*.py")))
     # Whitespace flattens; the house's wrapped wordings re-join too —
     # adjacent string-literal fragments ("..." newline "...") read as
     # one phrase, or the scan misses exactly the breaks it exists for.
     flat = " ".join(raw.split()).replace('" "', "")
-    assert "never been through a pass" not in flat, (
+    assert "been through a pass" not in flat, (
         "the engine claimed a run it cannot know"
     )
     assert flat.count("no pass on record") >= 3, (
         "the three refusal wordings did not all contract"
+    )
+
+
+def test_the_skin_claims_the_record_never_the_run():
+    """The same contract on the skin: the door's quiet rule names the
+    record, never a run (the affirmative phrasing lived here too)."""
+    flat = _flat()
+    assert "been through a pass" not in flat, (
+        "the skin claimed a run the engine cannot know"
+    )
+    assert "has a pass on record" in flat, (
+        "the door's quiet rule lost its record claim"
     )
 
 
