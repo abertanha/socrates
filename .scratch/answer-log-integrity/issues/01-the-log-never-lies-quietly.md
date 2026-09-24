@@ -24,7 +24,7 @@ already lives, in the warning's reader.
 **Blocked by:** None — can start immediately (no file overlap with
 lapidation-boundary's ticket; the two run parallel cleanly).
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] A log that exists but does not parse as a JSON list is a visible
       condition: the Satisfaction warning carries

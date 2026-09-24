@@ -23,7 +23,7 @@ suggestion.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] Door asks refuse activity names that are not modeling activities,
       with reason and admissible next in the refusal — `"satisfaction"`

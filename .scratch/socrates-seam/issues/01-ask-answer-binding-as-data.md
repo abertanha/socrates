@@ -21,7 +21,7 @@ around, a threshold could be.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] The persisted pending-question marker carries when the ask was
       recorded; every resume's answer echo carries when the resume was

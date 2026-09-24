@@ -20,7 +20,7 @@ runtime-agnostic pin holds.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] The package exposes an identity/version marker — importable,
       stable, asserted by test

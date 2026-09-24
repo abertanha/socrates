@@ -24,7 +24,7 @@ half of "etapas não são claras", no machinery vocabulary anywhere in it.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] Non-Refusal failures: stop, re-run the reads, tell the user in
       plain language, never improvise state surgery — pinned

@@ -23,7 +23,7 @@ negative space is as decided as the build.
 **Blocked by:** None — can start immediately (no file overlap with
 answer-log-integrity's ticket; the two run parallel cleanly).
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] The three user-facing refusal wordings — the door's quiet debt
       (`quiet_debt_reason`'s lapidate leg, one definition for both

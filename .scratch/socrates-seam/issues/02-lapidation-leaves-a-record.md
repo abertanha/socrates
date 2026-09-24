@@ -23,7 +23,7 @@ lapidation.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-24)
 
 - [ ] The assertion step records every outcome per Proposition —
       `survives` true and false, each citing its scenario id — persisted
