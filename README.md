@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/socrates-banner.png" alt="Socrates" width="600">
+</p>
+
 # Socrates
 
 A maieutic agent harness for conceptual domain modeling, built on the LangChain [`deepagents`](https://github.com/langchain-ai/deepagents) library.
